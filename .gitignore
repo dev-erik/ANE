@@ -17,8 +17,16 @@ tiny_train_m1
 train_large
 training/train_large
 training/train_large_ane
+training/train_opt
+training/train_double_buffer
 training/test_*
 !training/test_*.m
+
+# Inference binaries
+inference/qwen_ane
+
+# Dynamic training binaries
+training/training_dynamic/train
 
 # Test/research binaries
 test_chaining
