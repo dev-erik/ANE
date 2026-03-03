@@ -42,15 +42,59 @@ python3 convert_weights.py /path/to/Qwen2.5-0.5B-Instruct qwen05b.bin
 
 # 2. Build
 xcrun clang -O2 -framework Foundation -framework IOSurface \
-  -framework CoreML -framework Accelerate -ldl -lobjc \
+  -framework CoreML -framework Accelerate -ldl -lobjc -fobjc-arc \
   -o qwen_ane main.m
 
-# 3. Run (pass space-separated token IDs)
+# 3. Run (single-shot, pass space-separated token IDs)
 ./qwen_ane qwen05b.bin "151644 8948 198 2610 525 264 10950 17847 13" 20
 
 # 4. With tokenizer (requires transformers)
 python3 run.py "Say hello in one word."
 ```
+
+## Server Mode (Recommended)
+
+The first invocation compiles 169 ANE kernels (~5.5s). Server mode keeps them loaded so subsequent prompts respond instantly.
+
+### Socket server (best for `run.py` integration)
+
+```bash
+# Terminal 1: start the server (compiles once, stays running)
+./qwen_ane qwen05b.bin --server /tmp/qwen_ane.sock
+
+# Terminal 2: queries are instant (~0.5s instead of ~6s)
+python3 run.py "What is 2+2?"
+python3 run.py "Capital of France?"
+python3 run.py "Count from 1 to 5"
+```
+
+`run.py` auto-detects the socket at `/tmp/qwen_ane.sock` and connects to it. If no server is running, it falls back to subprocess mode (slower).
+
+You can also query the socket directly:
+```bash
+echo '{"tokens": [151644, 8948, 198], "max_tokens": 50}' | nc -U /tmp/qwen_ane.sock
+```
+
+Response format:
+```json
+{"output": [9707, 0, 151645], "prefill_tps": 68.4, "decode_tps": 67.8, "prompt_tokens": 28, "gen_tokens": 3}
+```
+
+### Stdin server (for piping/scripting)
+
+```bash
+./qwen_ane qwen05b.bin --server
+# Waits for "READY", then send lines of space-separated token IDs:
+# 151644 8948 198 2610 525|20
+# (pipe character separates max_tokens)
+```
+
+### Performance comparison
+
+| Mode | First prompt | Subsequent prompts |
+|------|-------------|-------------------|
+| Single-shot | ~6s | ~6s (recompiles) |
+| Server | ~6s (startup) | ~0.5s |
 
 ## Output
 
@@ -104,7 +148,6 @@ Adapting to other architectures (LLaMA, Gemma, Mistral) requires:
 ## Known Limitations
 
 - **CPU projections only** — ANE baked-weight conv kernels compile successfully but produce incorrect output (FP16 weight blob format mismatch). The `USE_ANE_PROJECTIONS` toggle exists but defaults to 0 (CPU via Accelerate BLAS). Fixing this would push decode speed from 82 t/s to 120+ t/s.
-- **No persistent server** — each invocation recompiles 169 kernels (~5s). A server mode that compiles once and serves via HTTP would eliminate this overhead.
 - **Single model** — hardcoded for Qwen2.5-0.5B. Needs parameterization for other sizes.
 - **f32 weights** — 1.9GB on disk. FP16 or quantized weight support would halve this.
 

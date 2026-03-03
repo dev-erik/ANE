@@ -433,3 +433,11 @@ static void qwen_alloc(QwenModel *m) {
     }
     m->pos = 0;
 }
+
+static void qwen_reset(QwenModel *m) {
+    for (int l = 0; l < QWEN_LAYERS; l++) {
+        memset(m->kv_cache_k[l], 0, QWEN_MAX_SEQ * QWEN_KV_DIM * sizeof(float));
+        memset(m->kv_cache_v[l], 0, QWEN_MAX_SEQ * QWEN_KV_DIM * sizeof(float));
+    }
+    m->pos = 0;
+}
