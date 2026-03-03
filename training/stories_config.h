@@ -22,8 +22,19 @@
 #define SEQ 256
 #define NLAYERS 12
 #define VOCAB 32000
-#define ACCUM_STEPS 10
+#define DEFAULT_ACCUM_STEPS 10
 #define MAX_COMPILES 100
+static int g_accum_steps = DEFAULT_ACCUM_STEPS;
+
+static void init_accum_steps(void) {
+    const char *env = getenv("ANE_ACCUM_STEPS");
+    if (env && env[0]) {
+        int v = atoi(env);
+        if (v > 0 && v <= 10000) g_accum_steps = v;
+    }
+}
+
+#define ACCUM_STEPS g_accum_steps
 
 // Per compile: 5 weight-bearing kernels per layer + 1 classifier = 5*12+1 = 61
 // Plus 1 static (sdpaBwd2 per layer, no weights) = 12 more but those are weight-free
@@ -111,15 +122,30 @@ typedef struct {
 
 // Globals
 static Class g_D, g_I, g_AR, g_AIO;
+static bool g_ane_init_done = false;   // Re-entry guard (ref: CRIT-01)
+static bool g_ane_ok_large = false;    // true only when all private classes loaded successfully
 static mach_timebase_info_data_t g_tb;
 static int g_compile_count = 0;
 
 static void ane_init(void) {
-    dlopen("/System/Library/PrivateFrameworks/AppleNeuralEngine.framework/AppleNeuralEngine", RTLD_NOW);
+    if (g_ane_init_done) return;
+    g_ane_init_done = true;  // Set first to prevent re-entry (ref: CRIT-01)
+    void *handle = dlopen(
+        "/System/Library/PrivateFrameworks/AppleNeuralEngine.framework/AppleNeuralEngine",
+        RTLD_NOW);
+    if (!handle) {
+        fprintf(stderr, "ANE: dlopen failed: %s\n", dlerror());
+        return;
+    }
     g_D  = NSClassFromString(@"_ANEInMemoryModelDescriptor");
     g_I  = NSClassFromString(@"_ANEInMemoryModel");
     g_AR = NSClassFromString(@"_ANERequest");
     g_AIO= NSClassFromString(@"_ANEIOSurfaceObject");
+    if (!g_D || !g_I || !g_AR || !g_AIO) {
+        fprintf(stderr, "ANE: Private classes not found (macOS version mismatch?)\n");
+        return;
+    }
+    g_ane_ok_large = true;
 }
 static double tb_ms(uint64_t t) { return (double)t * g_tb.numer / g_tb.denom / 1e6; }
 

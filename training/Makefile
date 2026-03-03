@@ -1,5 +1,10 @@
 CC = xcrun clang
-CFLAGS = -O2 -Wall -Wno-deprecated-declarations -fobjc-arc
+
+ANE_COMPAT = -Wno-deprecated-declarations
+SEC_FLAGS = -fstack-protector-strong -Wformat-security
+
+CFLAGS = -O2 -Wall $(ANE_COMPAT) -fobjc-arc $(SEC_FLAGS)
+CFLAGS_DEBUG = -O0 -g -Wall $(ANE_COMPAT) -fobjc-arc -fsanitize=address,undefined
 FRAMEWORKS = -framework Foundation -framework CoreML -framework IOSurface
 LDFLAGS = $(FRAMEWORKS) -ldl
 
@@ -36,13 +41,31 @@ test_qos_sweep: test_qos_sweep.m
 test_ane_advanced: test_ane_advanced.m
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
+test_chaining: test_chaining.m
+	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
+
 probes: $(PROBES)
+
+data: tokenize
+	@bash download_data.sh
 
 tokenize:
 	python3 tokenize.py
 
+setup: data
+	@echo "=== Setup complete ==="
+	@echo "Data:  tinystories_data00.bin"
+	@echo "To train: make train_large && ./train_large"
+	@echo "Override paths: ANE_MODEL_PATH=... ANE_DATA_PATH=... ./train_large"
+
+verify-flags:
+	@echo "=== Active CFLAGS ==="
+	@echo "$(CFLAGS)"
+	@echo "=== Compiler version ==="
+	@xcrun clang --version
+
 clean:
 	rm -f train train_large train_large_ane $(PROBES) test_rmsnorm_bwd test_classifier
 
-.PHONY: clean tokenize probes
+.PHONY: clean tokenize probes verify-flags data setup
 
