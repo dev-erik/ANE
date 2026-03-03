@@ -1,0 +1,67 @@
+{
+  "schema_version": 1,
+  "timestamp": "2026-03-03T11:46:08Z",
+  "system": {
+    "chip": "Apple M4 Max",
+    "machine": "Mac16,5",
+    "macos_version": "26.2",
+    "macos_build": "25C56",
+    "cpu_cores": 16,
+    "memory_gb": 128,
+    "neural_engine_cores": "16"
+  },
+  "benchmarks": {
+    "sram_probe": [
+      {"channels": 256, "weight_mb": 0.1, "ms_per_eval": 0.378, "tflops": 0.02, "gflops_per_mb": 177.7},
+      {"channels": 512, "weight_mb": 0.5, "ms_per_eval": 0.431, "tflops": 0.08, "gflops_per_mb": 155.6},
+      {"channels": 1024, "weight_mb": 2.0, "ms_per_eval": 0.411, "tflops": 0.33, "gflops_per_mb": 163.5},
+      {"channels": 1536, "weight_mb": 4.5, "ms_per_eval": 0.493, "tflops": 0.61, "gflops_per_mb": 136.1},
+      {"channels": 2048, "weight_mb": 8.0, "ms_per_eval": 0.410, "tflops": 1.31, "gflops_per_mb": 163.9},
+      {"channels": 2560, "weight_mb": 12.5, "ms_per_eval": 0.237, "tflops": 3.53, "gflops_per_mb": 282.6},
+      {"channels": 3072, "weight_mb": 18.0, "ms_per_eval": 0.335, "tflops": 3.60, "gflops_per_mb": 200.1},
+      {"channels": 3584, "weight_mb": 24.5, "ms_per_eval": 0.414, "tflops": 3.97, "gflops_per_mb": 162.1},
+      {"channels": 4096, "weight_mb": 32.0, "ms_per_eval": 1.134, "tflops": 1.89, "gflops_per_mb": 59.2},
+      {"channels": 4608, "weight_mb": 40.5, "ms_per_eval": 0.563, "tflops": 4.83, "gflops_per_mb": 119.2},
+      {"channels": 5120, "weight_mb": 50.0, "ms_per_eval": 0.659, "tflops": 5.09, "gflops_per_mb": 101.8},
+      {"channels": 6144, "weight_mb": 72.0, "ms_per_eval": 0.844, "tflops": 5.73, "gflops_per_mb": 79.5},
+      {"channels": 8192, "weight_mb": 128.0, "ms_per_eval": 4.203, "tflops": 1.02, "gflops_per_mb": 8.0}
+    ],
+    "inmem_peak": [
+      {"depth": 32, "channels": 512, "spatial": 64, "weight_mb": 16.0, "gflops": 1.07, "ms_per_eval": 0.408, "tflops": 2.63},
+      {"depth": 48, "channels": 512, "spatial": 64, "weight_mb": 24.0, "gflops": 1.61, "ms_per_eval": 0.262, "tflops": 6.15},
+      {"depth": 64, "channels": 512, "spatial": 64, "weight_mb": 32.0, "gflops": 2.15, "ms_per_eval": 0.244, "tflops": 8.80},
+      {"depth": 96, "channels": 512, "spatial": 64, "weight_mb": 48.0, "gflops": 3.22, "ms_per_eval": 0.326, "tflops": 9.89},
+      {"depth": 128, "channels": 512, "spatial": 64, "weight_mb": 64.0, "gflops": 4.29, "ms_per_eval": 0.385, "tflops": 11.14},
+      {"depth": 64, "channels": 256, "spatial": 64, "weight_mb": 8.0, "gflops": 0.54, "ms_per_eval": 0.365, "tflops": 1.47},
+      {"depth": 128, "channels": 256, "spatial": 64, "weight_mb": 16.0, "gflops": 1.07, "ms_per_eval": 0.454, "tflops": 2.37},
+      {"depth": 256, "channels": 256, "spatial": 64, "weight_mb": 32.0, "gflops": 2.15, "ms_per_eval": 0.351, "tflops": 6.11},
+      {"depth": 64, "channels": 384, "spatial": 64, "weight_mb": 18.0, "gflops": 1.21, "ms_per_eval": 0.429, "tflops": 2.82},
+      {"depth": 128, "channels": 384, "spatial": 64, "weight_mb": 36.0, "gflops": 2.42, "ms_per_eval": 0.354, "tflops": 6.82}
+    ],
+    "training_cpu_classifier": {
+      "ms_per_step": 72.4,
+      "ane_tflops_sustained": 1.29,
+      "total_tflops": 2.41,
+      "ane_util_pct": 8.1,
+      "compile_pct": 79.7,
+      "train_pct": 16.4
+    },
+    "training_ane_classifier": {
+      "ms_per_step": 62.9,
+      "ane_tflops_sustained": 1.68,
+      "total_tflops": 2.77,
+      "ane_util_pct": 10.6,
+      "compile_pct": 84.5,
+      "train_pct": 12.5
+    }
+  },
+  "summary": {
+    "peak_tflops": 11.14,
+    "sram_peak_efficiency_gflops_per_mb": 282.6,
+    "sram_spill_start_channels": 4096,
+    "training_ms_per_step_cpu": 72.4,
+    "training_ms_per_step_ane": 62.9,
+    "training_ane_tflops": 1.68,
+    "training_ane_util_pct": 10.6
+  }
+}
