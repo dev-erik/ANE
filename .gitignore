@@ -25,6 +25,9 @@ training/test_*
 # Inference binaries and runtime data
 inference/qwen_ane
 inference/qwen05b.bin
+inference/qwen05b_f32.bin
+inference/qwen05b_f16.bin
+inference/qwen05b_q8.bin
 inference/.venv/
 inference/benchmark_results.json
 
@@ -59,6 +62,7 @@ web/
 training/tinystories_data00.bin
 training/ane_stories110M_ckpt.bin
 *.bin
+*.metallib
 !training/download_data.sh
 
 # Secrets / env

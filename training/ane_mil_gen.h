@@ -232,6 +232,124 @@ static NSData *mil_build_ffn_up_weight_blob(const float *w1, const float *w3, in
     return [NSData dataWithBytesNoCopy:buf length:total freeWhenDone:YES];
 }
 
+// Generate MIL for fused GQA QKV: Q, K, V have different output dimensions
+// Qwen2.5-0.5B: Q=[q_dim, dim], K=[kv_dim, dim], V=[kv_dim, dim]
+// Weight blob: Wq[q_dim,dim] @ chunk0, Wk[kv_dim,dim] @ chunk1, Wv[kv_dim,dim] @ chunk2
+static NSString *mil_gen_qkv_gqa(int dim, int q_dim, int kv_dim, int spatial) {
+    NSUInteger cs_q  = 64 + (NSUInteger)q_dim  * dim * 2;
+    NSUInteger cs_kv = 64 + (NSUInteger)kv_dim * dim * 2;
+    NSUInteger off_k = 64 + cs_q;
+    NSUInteger off_v = off_k + cs_kv;
+    if (g_fp16_io) {
+        return [NSString stringWithFormat:
+            @"program(1.0)\n"
+            "[buildInfo = dict<tensor<string, []>, tensor<string, []>>({{\"coremlc-version\", \"3505.4.1\"}})]\n"
+            "{\n"
+            "    func main<ios16>(tensor<fp16, [1, %d, 1, %d]> x) {\n"
+            "        tensor<string, []> c_pad_type = const()[name = tensor<string, []>(\"c_pad_type\"), val = tensor<string, []>(\"valid\")];\n"
+            "        tensor<int32, [2]> c_strides = const()[name = tensor<string, []>(\"c_strides\"), val = tensor<int32, [2]>([1, 1])];\n"
+            "        tensor<int32, [4]> c_pad = const()[name = tensor<string, []>(\"c_pad\"), val = tensor<int32, [4]>([0, 0, 0, 0])];\n"
+            "        tensor<int32, [2]> c_dilations = const()[name = tensor<string, []>(\"c_dilations\"), val = tensor<int32, [2]>([1, 1])];\n"
+            "        tensor<int32, []> c_groups = const()[name = tensor<string, []>(\"c_groups\"), val = tensor<int32, []>(1)];\n"
+            "        tensor<fp16, [%d, %d, 1, 1]> Wq = const()[name = tensor<string, []>(\"Wq\"), "
+            "val = tensor<fp16, [%d, %d, 1, 1]>(BLOBFILE(path = tensor<string, []>(\"@model_path/weights/weight.bin\"), offset = tensor<uint64, []>(64)))];\n"
+            "        tensor<fp16, [%d, %d, 1, 1]> Wk = const()[name = tensor<string, []>(\"Wk\"), "
+            "val = tensor<fp16, [%d, %d, 1, 1]>(BLOBFILE(path = tensor<string, []>(\"@model_path/weights/weight.bin\"), offset = tensor<uint64, []>(%lu)))];\n"
+            "        tensor<fp16, [%d, %d, 1, 1]> Wv = const()[name = tensor<string, []>(\"Wv\"), "
+            "val = tensor<fp16, [%d, %d, 1, 1]>(BLOBFILE(path = tensor<string, []>(\"@model_path/weights/weight.bin\"), offset = tensor<uint64, []>(%lu)))];\n"
+            "        tensor<fp16, [1, %d, 1, %d]> q = conv(dilations = c_dilations, groups = c_groups, "
+            "pad = c_pad, pad_type = c_pad_type, strides = c_strides, weight = Wq, x = x)[name = tensor<string, []>(\"conv_q\")];\n"
+            "        tensor<fp16, [1, %d, 1, %d]> k = conv(dilations = c_dilations, groups = c_groups, "
+            "pad = c_pad, pad_type = c_pad_type, strides = c_strides, weight = Wk, x = x)[name = tensor<string, []>(\"conv_k\")];\n"
+            "        tensor<fp16, [1, %d, 1, %d]> v = conv(dilations = c_dilations, groups = c_groups, "
+            "pad = c_pad, pad_type = c_pad_type, strides = c_strides, weight = Wv, x = x)[name = tensor<string, []>(\"conv_v\")];\n"
+            "    } -> (q, k, v);\n"
+            "}\n",
+            dim, spatial,
+            q_dim, dim, q_dim, dim,
+            kv_dim, dim, kv_dim, dim, (unsigned long)off_k,
+            kv_dim, dim, kv_dim, dim, (unsigned long)off_v,
+            q_dim, spatial, kv_dim, spatial, kv_dim, spatial];
+    }
+    return [NSString stringWithFormat:
+        @"program(1.0)\n"
+        "[buildInfo = dict<tensor<string, []>, tensor<string, []>>({{\"coremlc-version\", \"3505.4.1\"}})]\n"
+        "{\n"
+        "    func main<ios16>(tensor<fp32, [1, %d, 1, %d]> x) {\n"
+        "        tensor<string, []> c_pad_type = const()[name = tensor<string, []>(\"c_pad_type\"), val = tensor<string, []>(\"valid\")];\n"
+        "        tensor<int32, [2]> c_strides = const()[name = tensor<string, []>(\"c_strides\"), val = tensor<int32, [2]>([1, 1])];\n"
+        "        tensor<int32, [4]> c_pad = const()[name = tensor<string, []>(\"c_pad\"), val = tensor<int32, [4]>([0, 0, 0, 0])];\n"
+        "        tensor<int32, [2]> c_dilations = const()[name = tensor<string, []>(\"c_dilations\"), val = tensor<int32, [2]>([1, 1])];\n"
+        "        tensor<int32, []> c_groups = const()[name = tensor<string, []>(\"c_groups\"), val = tensor<int32, []>(1)];\n"
+        "        tensor<string, []> to_fp16 = const()[name = tensor<string, []>(\"to_fp16\"), val = tensor<string, []>(\"fp16\")];\n"
+        "        tensor<fp16, [1, %d, 1, %d]> x16 = cast(dtype = to_fp16, x = x)[name = tensor<string, []>(\"cast_in\")];\n"
+        "        tensor<fp16, [%d, %d, 1, 1]> Wq = const()[name = tensor<string, []>(\"Wq\"), "
+        "val = tensor<fp16, [%d, %d, 1, 1]>(BLOBFILE(path = tensor<string, []>(\"@model_path/weights/weight.bin\"), offset = tensor<uint64, []>(64)))];\n"
+        "        tensor<fp16, [%d, %d, 1, 1]> Wk = const()[name = tensor<string, []>(\"Wk\"), "
+        "val = tensor<fp16, [%d, %d, 1, 1]>(BLOBFILE(path = tensor<string, []>(\"@model_path/weights/weight.bin\"), offset = tensor<uint64, []>(%lu)))];\n"
+        "        tensor<fp16, [%d, %d, 1, 1]> Wv = const()[name = tensor<string, []>(\"Wv\"), "
+        "val = tensor<fp16, [%d, %d, 1, 1]>(BLOBFILE(path = tensor<string, []>(\"@model_path/weights/weight.bin\"), offset = tensor<uint64, []>(%lu)))];\n"
+        "        tensor<fp16, [1, %d, 1, %d]> q16 = conv(dilations = c_dilations, groups = c_groups, "
+        "pad = c_pad, pad_type = c_pad_type, strides = c_strides, weight = Wq, x = x16)[name = tensor<string, []>(\"conv_q\")];\n"
+        "        tensor<fp16, [1, %d, 1, %d]> k16 = conv(dilations = c_dilations, groups = c_groups, "
+        "pad = c_pad, pad_type = c_pad_type, strides = c_strides, weight = Wk, x = x16)[name = tensor<string, []>(\"conv_k\")];\n"
+        "        tensor<fp16, [1, %d, 1, %d]> v16 = conv(dilations = c_dilations, groups = c_groups, "
+        "pad = c_pad, pad_type = c_pad_type, strides = c_strides, weight = Wv, x = x16)[name = tensor<string, []>(\"conv_v\")];\n"
+        "        tensor<string, []> to_fp32 = const()[name = tensor<string, []>(\"to_fp32\"), val = tensor<string, []>(\"fp32\")];\n"
+        "        tensor<fp32, [1, %d, 1, %d]> q = cast(dtype = to_fp32, x = q16)[name = tensor<string, []>(\"cast_q\")];\n"
+        "        tensor<fp32, [1, %d, 1, %d]> k = cast(dtype = to_fp32, x = k16)[name = tensor<string, []>(\"cast_k\")];\n"
+        "        tensor<fp32, [1, %d, 1, %d]> v = cast(dtype = to_fp32, x = v16)[name = tensor<string, []>(\"cast_v\")];\n"
+        "    } -> (q, k, v);\n"
+        "}\n",
+        dim, spatial, dim, spatial,
+        q_dim, dim, q_dim, dim,
+        kv_dim, dim, kv_dim, dim, (unsigned long)off_k,
+        kv_dim, dim, kv_dim, dim, (unsigned long)off_v,
+        q_dim, spatial, kv_dim, spatial, kv_dim, spatial,
+        q_dim, spatial, kv_dim, spatial, kv_dim, spatial];
+}
+
+// Build weight blob for GQA QKV (3 weight matrices with different shapes)
+static NSData *mil_build_qkv_gqa_weight_blob(const float *wq, int q_dim, int dim,
+                                               const float *wk, const float *wv, int kv_dim) {
+    NSUInteger wsize_q  = (NSUInteger)q_dim  * dim * 2;
+    NSUInteger wsize_kv = (NSUInteger)kv_dim * dim * 2;
+    NSUInteger cs_q  = 64 + wsize_q;
+    NSUInteger cs_kv = 64 + wsize_kv;
+    NSUInteger total = 64 + cs_q + 2 * cs_kv;
+    uint8_t *buf = (uint8_t*)calloc(total, 1);
+    buf[0] = 0x01; buf[4] = 0x02;
+
+    // Chunk 0: Wq
+    {
+        uint8_t *chunk = buf + 64;
+        chunk[0]=0xEF; chunk[1]=0xBE; chunk[2]=0xAD; chunk[3]=0xDE; chunk[4]=0x01;
+        *(uint32_t*)(chunk + 8) = (uint32_t)wsize_q;
+        *(uint32_t*)(chunk + 16) = (uint32_t)(64 + 64);
+        _Float16 *fp16 = (_Float16*)(chunk + 64);
+        for (NSUInteger i = 0; i < (NSUInteger)q_dim * dim; i++) fp16[i] = (_Float16)wq[i];
+    }
+    // Chunk 1: Wk
+    {
+        uint8_t *chunk = buf + 64 + cs_q;
+        chunk[0]=0xEF; chunk[1]=0xBE; chunk[2]=0xAD; chunk[3]=0xDE; chunk[4]=0x01;
+        *(uint32_t*)(chunk + 8) = (uint32_t)wsize_kv;
+        *(uint32_t*)(chunk + 16) = (uint32_t)(64 + cs_q + 64);
+        _Float16 *fp16 = (_Float16*)(chunk + 64);
+        for (NSUInteger i = 0; i < (NSUInteger)kv_dim * dim; i++) fp16[i] = (_Float16)wk[i];
+    }
+    // Chunk 2: Wv
+    {
+        uint8_t *chunk = buf + 64 + cs_q + cs_kv;
+        chunk[0]=0xEF; chunk[1]=0xBE; chunk[2]=0xAD; chunk[3]=0xDE; chunk[4]=0x01;
+        *(uint32_t*)(chunk + 8) = (uint32_t)wsize_kv;
+        *(uint32_t*)(chunk + 16) = (uint32_t)(64 + cs_q + cs_kv + 64);
+        _Float16 *fp16 = (_Float16*)(chunk + 64);
+        for (NSUInteger i = 0; i < (NSUInteger)kv_dim * dim; i++) fp16[i] = (_Float16)wv[i];
+    }
+    return [NSData dataWithBytesNoCopy:buf length:total freeWhenDone:YES];
+}
+
 // Generate MIL for fused FFN up: w1 + w3 parallel convs
 static NSString *mil_gen_ffn_up(int dim, int hidden_dim, int spatial) {
     NSUInteger cs = 64 + (NSUInteger)hidden_dim * dim * 2;

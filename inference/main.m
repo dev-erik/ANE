@@ -6,9 +6,10 @@
 //   4. HTTP API:      ./qwen_ane weights.bin --http 8000 --model-dir ~/models/Qwen2.5-0.5B-Instruct
 //
 // Build:
-//   xcrun clang -O2 -framework Foundation -framework IOSurface \
-//     -framework CoreML -framework Accelerate -ldl -lobjc -fobjc-arc \
-//     -o qwen_ane main.m
+//   xcrun clang -O3 -ffast-math -mcpu=apple-m4 -flto \
+//     -framework Foundation -framework IOSurface \
+//     -framework CoreML -framework Accelerate -framework Metal \
+//     -ldl -lobjc -fobjc-arc -o qwen_ane main.m
 //
 #import <Foundation/Foundation.h>
 #include <stdio.h>
@@ -39,36 +40,112 @@ static void handle_signal(int sig) {
     _exit(0);
 }
 
+static void *safe_malloc(size_t size, const char *desc) {
+    void *p = malloc(size);
+    if (!p) {
+        fprintf(stderr, "FATAL: malloc failed for %s (%.1f MB)\n",
+                desc, (double)size / (1024*1024));
+        exit(1);
+    }
+    return p;
+}
+
+static void *safe_calloc(size_t count, size_t size, const char *desc) {
+    void *p = calloc(count, size);
+    if (!p) {
+        fprintf(stderr, "FATAL: calloc failed for %s (%.1f MB)\n",
+                desc, (double)(count * size) / (1024*1024));
+        exit(1);
+    }
+    return p;
+}
+
 static int load_weights(const char *path) {
     FILE *f = fopen(path, "rb");
     if (!f) { fprintf(stderr, "Cannot open %s\n", path); return -1; }
 
-    int config[7];
-    fread(config, sizeof(int), 7, f);
+    // Try 8-int header first (new format), fall back to 7-int (legacy)
+    int config[8] = {0};
+    size_t hdr_read = fread(config, sizeof(int), 8, f);
     int dim = config[0], hidden = config[1], n_layers = config[2];
     int n_heads = config[3], n_kv_heads = config[4], vocab = config[5];
-    printf("Config: dim=%d hidden=%d layers=%d heads=%d kv_heads=%d vocab=%d\n",
-           dim, hidden, n_layers, n_heads, n_kv_heads, vocab);
+    int fmt_flag = 0;
+
+    if (hdr_read == 8 && config[7] >= 0 && config[7] <= 3) {
+        fmt_flag = config[7];
+    } else {
+        fseek(f, 7 * sizeof(int), SEEK_SET);
+    }
+
+    g_model.weight_fmt = fmt_flag;
+    int is_f16 = (fmt_flag == 1);
+    int is_q8 = (fmt_flag == 2);
+    int is_q4 = (fmt_flag == 3);
+    const char *fmt_str = is_q4 ? "Q4" : (is_q8 ? "Q8" : (is_f16 ? "F16" : "F32"));
+    printf("Config: dim=%d hidden=%d layers=%d heads=%d kv_heads=%d vocab=%d fmt=%s\n",
+           dim, hidden, n_layers, n_heads, n_kv_heads, vocab, fmt_str);
 
     int q_dim = n_heads * QWEN_HEAD_DIM;
     int kv_dim = n_kv_heads * QWEN_HEAD_DIM;
 
-    g_model.embed = (float*)malloc((size_t)vocab * dim * sizeof(float));
+    // Embeddings always F32
+    g_model.embed = (float*)safe_malloc((size_t)vocab * dim * sizeof(float), "embed");
     fread(g_model.embed, sizeof(float), (size_t)vocab * dim, f);
 
     for (int l = 0; l < n_layers; l++) {
+        // RMSNorm always F32
         g_model.rms_att[l] = (float*)malloc(dim * sizeof(float));
         fread(g_model.rms_att[l], sizeof(float), dim, f);
 
-        g_model.wq[l] = (float*)malloc((size_t)q_dim * dim * sizeof(float));
-        fread(g_model.wq[l], sizeof(float), (size_t)q_dim * dim, f);
-        g_model.wk[l] = (float*)malloc((size_t)kv_dim * dim * sizeof(float));
-        fread(g_model.wk[l], sizeof(float), (size_t)kv_dim * dim, f);
-        g_model.wv[l] = (float*)malloc((size_t)kv_dim * dim * sizeof(float));
-        fread(g_model.wv[l], sizeof(float), (size_t)kv_dim * dim, f);
-        g_model.wo[l] = (float*)malloc((size_t)q_dim * dim * sizeof(float));
-        fread(g_model.wo[l], sizeof(float), (size_t)dim * q_dim, f);
+        if (is_q4) {
+            #define LOAD_Q4(q8ptr, out_d, in_d) do { \
+                size_t _nb = (size_t)(in_d) / Q4_BLOCK_SIZE; \
+                size_t _bytes = (size_t)(out_d) * _nb * Q4_BLOCK_BYTES; \
+                q8ptr = (uint8_t*)safe_malloc(_bytes, #q8ptr); \
+                fread(q8ptr, 1, _bytes, f); \
+            } while(0)
+            LOAD_Q4(g_model.wq_q8[l], q_dim, dim);
+            LOAD_Q4(g_model.wk_q8[l], kv_dim, dim);
+            LOAD_Q4(g_model.wv_q8[l], kv_dim, dim);
+            LOAD_Q4(g_model.wo_q8[l], dim, q_dim);
+            #undef LOAD_Q4
+        } else if (is_q8) {
+            #define LOAD_Q8(q8ptr, out_d, in_d) do { \
+                size_t _nb = (size_t)(in_d) / Q8_BLOCK_SIZE; \
+                size_t _bytes = (size_t)(out_d) * _nb * Q8_BLOCK_BYTES; \
+                q8ptr = (uint8_t*)safe_malloc(_bytes, #q8ptr); \
+                fread(q8ptr, 1, _bytes, f); \
+            } while(0)
+            LOAD_Q8(g_model.wq_q8[l], q_dim, dim);
+            LOAD_Q8(g_model.wk_q8[l], kv_dim, dim);
+            LOAD_Q8(g_model.wv_q8[l], kv_dim, dim);
+            LOAD_Q8(g_model.wo_q8[l], dim, q_dim);
+            #undef LOAD_Q8
+        } else if (is_f16) {
+            #define LOAD_F16_AS_F32(f32ptr, f16ptr, n) do { \
+                size_t _n = (size_t)(n); \
+                f16ptr = (_Float16*)malloc(_n * sizeof(_Float16)); \
+                fread(f16ptr, sizeof(_Float16), _n, f); \
+                f32ptr = (float*)malloc(_n * sizeof(float)); \
+                convert_f16_to_f32(f16ptr, f32ptr, _n); \
+            } while(0)
+            LOAD_F16_AS_F32(g_model.wq[l], g_model.wq_f16[l], (size_t)q_dim * dim);
+            LOAD_F16_AS_F32(g_model.wk[l], g_model.wk_f16[l], (size_t)kv_dim * dim);
+            LOAD_F16_AS_F32(g_model.wv[l], g_model.wv_f16[l], (size_t)kv_dim * dim);
+            LOAD_F16_AS_F32(g_model.wo[l], g_model.wo_f16[l], (size_t)dim * q_dim);
+            #undef LOAD_F16_AS_F32
+        } else {
+            g_model.wq[l] = (float*)malloc((size_t)q_dim * dim * sizeof(float));
+            fread(g_model.wq[l], sizeof(float), (size_t)q_dim * dim, f);
+            g_model.wk[l] = (float*)malloc((size_t)kv_dim * dim * sizeof(float));
+            fread(g_model.wk[l], sizeof(float), (size_t)kv_dim * dim, f);
+            g_model.wv[l] = (float*)malloc((size_t)kv_dim * dim * sizeof(float));
+            fread(g_model.wv[l], sizeof(float), (size_t)kv_dim * dim, f);
+            g_model.wo[l] = (float*)malloc((size_t)q_dim * dim * sizeof(float));
+            fread(g_model.wo[l], sizeof(float), (size_t)dim * q_dim, f);
+        }
 
+        // Biases always F32
         g_model.q_bias[l] = (float*)malloc(q_dim * sizeof(float));
         g_model.k_bias[l] = (float*)malloc(kv_dim * sizeof(float));
         g_model.v_bias[l] = (float*)malloc(kv_dim * sizeof(float));
@@ -76,15 +153,52 @@ static int load_weights(const char *path) {
         fread(g_model.k_bias[l], sizeof(float), kv_dim, f);
         fread(g_model.v_bias[l], sizeof(float), kv_dim, f);
 
+        // FFN RMSNorm always F32
         g_model.rms_ffn[l] = (float*)malloc(dim * sizeof(float));
         fread(g_model.rms_ffn[l], sizeof(float), dim, f);
 
-        g_model.w_gate[l] = (float*)malloc((size_t)hidden * dim * sizeof(float));
-        fread(g_model.w_gate[l], sizeof(float), (size_t)hidden * dim, f);
-        g_model.w_up[l] = (float*)malloc((size_t)hidden * dim * sizeof(float));
-        fread(g_model.w_up[l], sizeof(float), (size_t)hidden * dim, f);
-        g_model.w_down[l] = (float*)malloc((size_t)dim * hidden * sizeof(float));
-        fread(g_model.w_down[l], sizeof(float), (size_t)dim * hidden, f);
+        if (is_q4) {
+            #define LOAD_Q4(q8ptr, out_d, in_d) do { \
+                size_t _nb = (size_t)(in_d) / Q4_BLOCK_SIZE; \
+                size_t _bytes = (size_t)(out_d) * _nb * Q4_BLOCK_BYTES; \
+                q8ptr = (uint8_t*)safe_malloc(_bytes, #q8ptr); \
+                fread(q8ptr, 1, _bytes, f); \
+            } while(0)
+            LOAD_Q4(g_model.wgate_q8[l], hidden, dim);
+            LOAD_Q4(g_model.wup_q8[l],   hidden, dim);
+            LOAD_Q4(g_model.wdown_q8[l], dim, hidden);
+            #undef LOAD_Q4
+        } else if (is_q8) {
+            #define LOAD_Q8(q8ptr, out_d, in_d) do { \
+                size_t _nb = (size_t)(in_d) / Q8_BLOCK_SIZE; \
+                size_t _bytes = (size_t)(out_d) * _nb * Q8_BLOCK_BYTES; \
+                q8ptr = (uint8_t*)safe_malloc(_bytes, #q8ptr); \
+                fread(q8ptr, 1, _bytes, f); \
+            } while(0)
+            LOAD_Q8(g_model.wgate_q8[l], hidden, dim);
+            LOAD_Q8(g_model.wup_q8[l],   hidden, dim);
+            LOAD_Q8(g_model.wdown_q8[l], dim, hidden);
+            #undef LOAD_Q8
+        } else if (is_f16) {
+            #define LOAD_F16_AS_F32(f32ptr, f16ptr, n) do { \
+                size_t _n = (size_t)(n); \
+                f16ptr = (_Float16*)malloc(_n * sizeof(_Float16)); \
+                fread(f16ptr, sizeof(_Float16), _n, f); \
+                f32ptr = (float*)malloc(_n * sizeof(float)); \
+                convert_f16_to_f32(f16ptr, f32ptr, _n); \
+            } while(0)
+            LOAD_F16_AS_F32(g_model.w_gate[l], g_model.wgate_f16[l], (size_t)hidden * dim);
+            LOAD_F16_AS_F32(g_model.w_up[l],   g_model.wup_f16[l],   (size_t)hidden * dim);
+            LOAD_F16_AS_F32(g_model.w_down[l], g_model.wdown_f16[l], (size_t)dim * hidden);
+            #undef LOAD_F16_AS_F32
+        } else {
+            g_model.w_gate[l] = (float*)malloc((size_t)hidden * dim * sizeof(float));
+            fread(g_model.w_gate[l], sizeof(float), (size_t)hidden * dim, f);
+            g_model.w_up[l] = (float*)malloc((size_t)hidden * dim * sizeof(float));
+            fread(g_model.w_up[l], sizeof(float), (size_t)hidden * dim, f);
+            g_model.w_down[l] = (float*)malloc((size_t)dim * hidden * sizeof(float));
+            fread(g_model.w_down[l], sizeof(float), (size_t)dim * hidden, f);
+        }
     }
 
     g_model.rms_final = (float*)malloc(dim * sizeof(float));
@@ -92,7 +206,8 @@ static int load_weights(const char *path) {
 
     long file_size = ftell(f);
     fclose(f);
-    printf("Weights loaded (%.0f MB)\n", (float)file_size / 1024 / 1024);
+    printf("Weights loaded (%.0f MB, %s projections)\n",
+           (float)file_size / 1024 / 1024, fmt_str);
     return 0;
 }
 
@@ -115,16 +230,25 @@ static double timespec_diff(struct timespec *a, struct timespec *b) {
 }
 
 // Run one generation pass. Writes output token IDs to out_ids, returns count.
-// If out_fd >= 0, writes formatted results there; otherwise prints to stdout.
+// Uses batched prefill (sgemm) for prompt, sequential decode (sgemv) for generation.
 static int generate(int *prompt_ids, int n_prompt, int max_gen,
                     int *out_ids, int max_out,
                     double *prefill_tps, double *decode_tps) {
     struct timespec t0, t1, t_pre;
     clock_gettime(CLOCK_MONOTONIC, &t0);
 
-    int next = 0;
-    for (int i = 0; i < n_prompt; i++)
-        next = qwen_forward(&g_model, prompt_ids[i]);
+    int next;
+    if (g_model.use_ane) {
+        for (int i = 0; i < n_prompt; i++)
+            next = qwen_forward_ane(&g_model, prompt_ids[i]);
+    } else if (n_prompt > 1 && g_model.weight_fmt == 3) {
+        next = qwen_prefill_q4(&g_model, prompt_ids, n_prompt);
+    } else if (n_prompt > 1 && g_model.weight_fmt != 2) {
+        next = qwen_prefill(&g_model, prompt_ids, n_prompt);
+    } else {
+        for (int i = 0; i < n_prompt; i++)
+            next = qwen_forward(&g_model, prompt_ids[i]);
+    }
 
     clock_gettime(CLOCK_MONOTONIC, &t_pre);
     double ps = timespec_diff(&t0, &t_pre);
@@ -135,7 +259,10 @@ static int generate(int *prompt_ids, int n_prompt, int max_gen,
     for (int i = 0; i < max_gen && n_out < max_out; i++) {
         if (n_out < max_out) out_ids[n_out++] = next;
         if (next == eos || next == eos2) break;
-        next = qwen_forward(&g_model, next);
+        if (g_model.use_ane)
+            next = qwen_forward_ane(&g_model, next);
+        else
+            next = qwen_forward(&g_model, next);
     }
 
     clock_gettime(CLOCK_MONOTONIC, &t1);
@@ -427,6 +554,7 @@ int main(int argc, char **argv) {
         int server_mode = 0;
         int http_port = 0;
         int test_ane = 0;
+        int use_ane = 0;
         const char *sock_path = NULL;
         const char *model_dir = NULL;
         for (int i = 2; i < argc; i++) {
@@ -442,6 +570,61 @@ int main(int argc, char **argv) {
                 else { fprintf(stderr, "--model-dir requires a path\n"); return 1; }
             } else if (strcmp(argv[i], "--test-ane") == 0) {
                 test_ane = 1;
+            } else if (strcmp(argv[i], "--ane") == 0) {
+                use_ane = 1;
+            }
+        }
+
+        // Q4 CPU mode: dequantize Q4 to F32 at load time, use AMX cblas_sgemv
+        if (g_model.weight_fmt == 3) {
+            printf("Dequantizing Q4→F32 for AMX acceleration...\n");
+            int q_dim = QWEN_Q_DIM, kv_dim = QWEN_KV_DIM, dim = QWEN_DIM;
+            int hidden = QWEN_HIDDEN;
+
+            #define DEQUANT_Q4_TO_F32(f32ptr, q4ptr, out_d, in_d) do { \
+                size_t _n = (size_t)(out_d) * (in_d); \
+                f32ptr = (float*)malloc(_n * sizeof(float)); \
+                dequant_q4_to_f32(q4ptr, f32ptr, (in_d), (out_d)); \
+                free(q4ptr); q4ptr = NULL; \
+            } while(0)
+
+            for (int l = 0; l < QWEN_LAYERS; l++) {
+                DEQUANT_Q4_TO_F32(g_model.wq[l],     g_model.wq_q8[l],     q_dim,  dim);
+                DEQUANT_Q4_TO_F32(g_model.wk[l],     g_model.wk_q8[l],     kv_dim, dim);
+                DEQUANT_Q4_TO_F32(g_model.wv[l],     g_model.wv_q8[l],     kv_dim, dim);
+                DEQUANT_Q4_TO_F32(g_model.wo[l],     g_model.wo_q8[l],     dim,    q_dim);
+                DEQUANT_Q4_TO_F32(g_model.w_gate[l], g_model.wgate_q8[l],  hidden, dim);
+                DEQUANT_Q4_TO_F32(g_model.w_up[l],   g_model.wup_q8[l],    hidden, dim);
+                DEQUANT_Q4_TO_F32(g_model.w_down[l], g_model.wdown_q8[l],  dim,    hidden);
+            }
+            #undef DEQUANT_Q4_TO_F32
+
+            g_model.weight_fmt = 0;
+            printf("Q4→F32 done. Using AMX cblas_sgemv (91+ t/s decode).\n");
+        }
+
+        // ANE fused kernel compilation (requires F32 weights for baked-weight convs)
+        if (use_ane) {
+            if (g_model.weight_fmt != 0) {
+                printf("--ane requires F32 weights (weight_fmt=0). Got fmt=%d\n", g_model.weight_fmt);
+                printf("Re-run with F32 weight file (convert_weights.py without --f16/--q4/--q8)\n");
+                use_ane = 0;
+            } else {
+                struct timespec ta0, ta1;
+                clock_gettime(CLOCK_MONOTONIC, &ta0);
+                qwen_compile_kernels_fused(&g_model);
+                clock_gettime(CLOCK_MONOTONIC, &ta1);
+                double ane_sec = timespec_diff(&ta0, &ta1);
+                printf("ANE fused compile time: %.1fs\n", ane_sec);
+
+                // Verify at least one QKV kernel compiled
+                if (g_model.k_qkv[0] && g_model.k_o[0] && g_model.k_ffn_up[0] && g_model.k_down[0]) {
+                    g_model.use_ane = 1;
+                    printf("ANE fused mode active: 112 kernels (QKV+FFN_up fused)\n");
+                } else {
+                    printf("ANE fused compilation failed, falling back to CPU\n");
+                    use_ane = 0;
+                }
             }
         }
 

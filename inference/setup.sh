@@ -7,7 +7,8 @@ MODEL_DIR="$HOME/models/Qwen2.5-0.5B-Instruct"
 WEIGHTS_BIN="$SCRIPT_DIR/qwen05b.bin"
 BINARY="$SCRIPT_DIR/qwen_ane"
 VENV_DIR="$SCRIPT_DIR/.venv"
-EXPECTED_WEIGHT_SIZE=1976131100
+EXPECTED_WEIGHT_SIZE_F32=1976131100
+EXPECTED_WEIGHT_SIZE_F16=988082236
 
 info()  { printf "\033[1;34m==> %s\033[0m\n" "$1"; }
 ok()    { printf "\033[1;32m  ✓ %s\033[0m\n" "$1"; }
@@ -86,16 +87,16 @@ info "Converting weights to binary format..."
 
 if [ -f "$WEIGHTS_BIN" ]; then
     ACTUAL_SIZE=$(stat -f%z "$WEIGHTS_BIN" 2>/dev/null || stat -c%s "$WEIGHTS_BIN" 2>/dev/null)
-    if [ "$ACTUAL_SIZE" -eq "$EXPECTED_WEIGHT_SIZE" ]; then
+    if [ "$ACTUAL_SIZE" -eq "$EXPECTED_WEIGHT_SIZE_F16" ] || [ "$ACTUAL_SIZE" -eq "$EXPECTED_WEIGHT_SIZE_F32" ]; then
         ok "Weights already converted ($((ACTUAL_SIZE / 1024 / 1024)) MB)"
     else
-        warn "Weight file exists but wrong size ($ACTUAL_SIZE vs $EXPECTED_WEIGHT_SIZE), reconverting"
-        python3 "$SCRIPT_DIR/convert_weights.py" "$MODEL_DIR" "$WEIGHTS_BIN"
-        ok "Weights converted"
+        warn "Weight file exists but unexpected size ($ACTUAL_SIZE), reconverting as F16"
+        python3 "$SCRIPT_DIR/convert_weights.py" "$MODEL_DIR" "$WEIGHTS_BIN" --f16
+        ok "Weights converted (F16)"
     fi
 else
-    python3 "$SCRIPT_DIR/convert_weights.py" "$MODEL_DIR" "$WEIGHTS_BIN"
-    ok "Weights converted"
+    python3 "$SCRIPT_DIR/convert_weights.py" "$MODEL_DIR" "$WEIGHTS_BIN" --f16
+    ok "Weights converted (F16)"
 fi
 
 # --- Step 5: Build binary ---
@@ -113,8 +114,10 @@ elif [ "$SCRIPT_DIR/main.m" -nt "$BINARY" ] || \
 fi
 
 if [ "$NEEDS_BUILD" -eq 1 ]; then
-    xcrun clang -O2 -framework Foundation -framework IOSurface \
-        -framework CoreML -framework Accelerate -ldl -lobjc -fobjc-arc \
+    xcrun clang -O3 -ffast-math -mcpu=apple-m4 -flto \
+        -framework Foundation -framework IOSurface \
+        -framework CoreML -framework Accelerate -framework Metal \
+        -ldl -lobjc -fobjc-arc \
         -o "$BINARY" "$SCRIPT_DIR/main.m"
     ok "Binary built: $BINARY"
 else
