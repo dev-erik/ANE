@@ -27,7 +27,6 @@ Das ANE-Projekt implementiert Neural-Network-Training direkt auf Apples Neural E
 ### [CRIT-01] Keine Fehlerbehandlung bei `dlopen()` für Private Framework
 **Datei:** `training/ane_runtime.h:26`, `api_exploration.m:15`
 **Schweregrad:** KRITISCH
-**Status: BEHOBEN** (2026-03-02, Branch `fix/crit-security-findings`)
 
 ```objc
 // ane_runtime.h:26
@@ -59,7 +58,6 @@ if (!g_ANEDesc || !g_ANEInMem || !g_ANEReq || !g_ANEIO) {
 ### [CRIT-02] Unsichere `objc_msgSend`-Casts ohne Typ-Validierung
 **Dateien:** `training/ane_runtime.h:59-125`, `training/stories_io.h:90-117`
 **Schweregrad:** KRITISCH
-**Status: BEHOBEN** (2026-03-02, Branch `fix/crit-security-findings`)
 
 ```objc
 // ane_runtime.h:59-61
@@ -86,7 +84,6 @@ if (!g_ANEDesc) { fprintf(stderr, "g_ANEDesc is NULL\n"); return NULL; }
 ### [CRIT-03] `fread()`-Rückgabewerte nie geprüft — uninitalisierter Speicher
 **Dateien:** `training/model.h:81-146`, `training/train_large.m:17-55`
 **Schweregrad:** KRITISCH
-**Status: BEHOBEN** (2026-03-02, Branch `fix/crit-security-findings`)
 
 ```c
 // model.h:81
@@ -116,7 +113,6 @@ if (m->cfg.dim <= 0 || m->cfg.dim > 65536 || m->cfg.n_layers <= 0) {
 ### [CRIT-04] Integer Overflow in Speicher-Berechnung
 **Dateien:** `training/stories_io.h:13-14`, `training/ane_mil_gen.h:12-13`
 **Schweregrad:** KRITISCH
-**Status: BEHOBEN** (2026-03-02, Branch `fix/crit-security-findings`)
 
 ```c
 // stories_io.h:13-14

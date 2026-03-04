@@ -50,25 +50,6 @@ Alle 4 LOW-Findings behoben:
 **Simulation:** 3 Iterationsrunden, Gesamtbewertung 96.35% (alle Kriterien ≥ 95%)
 **Remote:** `origin=manni07/ANE`, `upstream=maderix/ANE`
 
-## CRIT-Finding Fixes (2026-03-02)
-
-Branch `fix/crit-security-findings` erstellt. Alle 4 CRIT-Findings behoben:
-
-| Finding | Dateien | Kernänderung |
-|---------|---------|-------------|
-| CRIT-01 | `training/ane_runtime.h`, `training/stories_config.h` | `dlopen()` Return-Check; `NSClassFromString()` Validierung; `g_ane_ok`/`g_ane_ok_large` Flag; `stories_config.h` Re-Entry-Guard |
-| CRIT-02 | `training/ane_runtime.h`, `training/stories_io.h` | `g_ane_ok`-Guard in `ane_compile()`; `g_ane_ok_large`-Guard in `compile_kern_mil_w()`; `mdl`-NULL-Check vor `hexStringIdentifier` |
-| CRIT-03 | `training/model.h`, `training/train_large.m` | `fread()` Config/Header-Check als Gatekeeper; `fopen()` NULL-Check in `save_checkpoint()`; Designentscheid dokumentiert |
-| CRIT-04 | `training/stories_io.h`, `training/model.h` | `int`→`size_t` in allen `build_blob*` Funktionen; `(size_t)`-Cast in `malloc()`-Größen; `calloc()` NULL-Checks |
-
-**Simulation:** 3 Iterationsrunden (CRIT-03 benötigte 3 Runs), Gesamtbewertung 96.15% (alle Kriterien ≥ 95%)
-**Branch:** `fix/crit-security-findings` auf `manni07/ANE`
-
-## Status
-
-| Finding-Typ | Anzahl | Status |
-|-------------|--------|--------|
-| KRITISCH (CRIT-01–04) | 4 | ✅ BEHOBEN |
-| HOCH (HIGH-01–05) | 5 | Offen |
-| MITTEL (MED-01–06) | 6 | Offen |
-| NIEDRIG (LOW-01–04) | 4 | ✅ BEHOBEN |
+## Nächste Schritte (optional)
+- Code-Fixes für KRITISCHE Befunde implementieren (CRIT-01 bis CRIT-04)
+- Pull Request von `fix/low-security-findings` nach `main` stellen
