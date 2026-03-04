@@ -20,7 +20,8 @@ typedef struct {
 
 static Class g_ANEDesc, g_ANEInMem, g_ANEReq, g_ANEIO;
 static bool g_ane_loaded = false;
-static bool g_ane_ok = false;  // true only when all private classes loaded successfully
+static id g_ane_client = nil;
+static bool g_ane_ok = false;
 
 static void ane_init(void) {
     if (g_ane_loaded) return;
@@ -41,6 +42,11 @@ static void ane_init(void) {
         return;
     }
     g_ane_ok = true;
+
+    Class clientCls = NSClassFromString(@"_ANEClient");
+    if (clientCls) {
+        g_ane_client = [clientCls performSelector:@selector(sharedConnection)];
+    }
 }
 
 static IOSurfaceRef ane_create_surface(size_t bytes) {
@@ -163,6 +169,20 @@ static bool ane_eval(ANEKernel *k) {
                 e ? [[e description] UTF8String] : "unknown error");
     }
     return ok;
+}
+
+static bool ane_eval_rt(ANEKernel *k) {
+    if (!g_ane_client) return ane_eval(k);
+    NSError *e = nil;
+    BOOL ok = ((BOOL(*)(id,SEL,id,id,id,NSError**))objc_msgSend)(
+        g_ane_client, @selector(evaluateRealTimeWithModel:options:request:error:),
+        k->model, @{}, k->request, &e);
+    if (!ok) {
+        fprintf(stderr, "ANE RT eval failed, falling back to standard: %s\n",
+                e ? [[e description] UTF8String] : "unknown");
+        return ane_eval(k);
+    }
+    return true;
 }
 
 static void ane_free(ANEKernel *k) {

@@ -54,6 +54,27 @@ test_ane_advanced: test_ane_advanced.m
 test_chaining: test_chaining.m
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
+test_chaining_v2: test_chaining_v2.m
+	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
+
+test_bench_paths: test_bench_paths.m ane_runtime.h
+	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
+
+test_ane_model: test_ane_model.m
+	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS) -framework Metal
+
+test_throughput_ceiling: test_throughput_ceiling.m ane_runtime.h
+	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
+
+test_coreml_chaining: test_coreml_chaining.m
+	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS) -framework Metal
+
+test_e5_validate: test_e5_validate.m
+	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS) -framework Metal
+
+test_mil_custom: test_mil_custom.m
+	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS) -framework Accelerate
+
 test_data_validation: test_data_validation.c data_validation.h
 	$(CC_C) $(CFLAGS_C) -o $@ $<
 
@@ -80,6 +101,6 @@ verify-flags:
 	@xcrun clang --version
 
 clean:
-	rm -f train train_large train_large_ane train_opt train_double_buffer $(PROBES) test_rmsnorm_bwd test_classifier test_data_validation test_chaining
+	rm -f train train_large train_large_ane train_opt train_double_buffer $(PROBES) test_rmsnorm_bwd test_classifier test_data_validation test_chaining test_chaining_v2 test_bench_paths test_ane_model test_throughput_ceiling test_coreml_chaining test_e5_validate test_mil_custom
 
 .PHONY: clean tokenize probes security-tests verify-flags data setup
