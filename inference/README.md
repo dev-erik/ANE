@@ -30,9 +30,28 @@ This automatically:
 
 After setup, you're ready to go.
 
-## HTTP API (Recommended)
+## MLX Backend (Fastest -- ~503 t/s)
 
-The fastest way to use inference. Single process, zero Python overhead.
+Uses Apple's MLX framework with Q4 quantized weights on Metal GPU. 5.5x faster than the native CPU engine.
+
+```bash
+# Requires: pip3 install mlx-lm
+./qwen_ane --mlx --http 8080
+
+# OpenAI-compatible API
+curl http://localhost:8080/v1/completions \
+  -H "Content-Type: application/json" \
+  -d '{"model":"mlx-community/Qwen2.5-0.5B-Instruct-4bit","prompt":"What is 2+2?","max_tokens":50}'
+
+# Custom model
+./qwen_ane --mlx --http 8080 --mlx-model mlx-community/Qwen2.5-0.5B-Instruct-8bit
+```
+
+Also supports `/v1/chat/completions` with message arrays.
+
+## Native HTTP API (CPU AMX -- ~92 t/s)
+
+Pure C server, zero Python overhead. Uses CPU AMX for inference.
 
 ```bash
 # Start server (compiles 169 ANE kernels on first launch, ~6s)

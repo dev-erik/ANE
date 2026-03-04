@@ -1,9 +1,10 @@
 // main.m -- Qwen2.5-0.5B inference on Apple Neural Engine
-// Supports four modes:
+// Supports five modes:
 //   1. Single-shot:  ./qwen_ane weights.bin "token_ids" [max_tokens]
 //   2. Stdin server:  ./qwen_ane weights.bin --server
 //   3. Socket server: ./qwen_ane weights.bin --server /tmp/qwen_ane.sock
 //   4. HTTP API:      ./qwen_ane weights.bin --http 8000 --model-dir ~/models/Qwen2.5-0.5B-Instruct
+//   5. MLX backend:   ./qwen_ane --mlx --http 8080 [--mlx-model MODEL_ID]
 //
 // Build:
 //   xcrun clang -O3 -ffast-math -mcpu=apple-m4 -flto \
@@ -519,6 +520,30 @@ static void http_api_handler(int client_fd, HttpRequest *req, void *ctx) {
     qwen_reset(&g_model);
 }
 
+// --- MLX backend launcher ---
+static int launch_mlx_server(int port, const char *mlx_model) {
+    const char *model = mlx_model ? mlx_model : "mlx-community/Qwen2.5-0.5B-Instruct-4bit";
+    char port_str[16];
+    snprintf(port_str, sizeof(port_str), "%d", port);
+
+    printf("=== MLX Backend Mode ===\n");
+    printf("Model:  %s\n", model);
+    printf("Port:   %d\n", port);
+    printf("API:    OpenAI-compatible (POST /v1/completions, /v1/chat/completions)\n\n");
+    printf("Starting mlx_lm.server...\n");
+    fflush(stdout);
+
+    execlp("python3", "python3", "-m", "mlx_lm", "server",
+           "--model", model,
+           "--host", "127.0.0.1",
+           "--port", port_str,
+           NULL);
+
+    fprintf(stderr, "ERROR: Failed to start mlx_lm.server.\n");
+    fprintf(stderr, "Install with: pip3 install mlx-lm\n");
+    return 1;
+}
+
 int main(int argc, char **argv) {
     @autoreleasepool {
         if (argc < 2) {
@@ -527,9 +552,27 @@ int main(int argc, char **argv) {
                 "  %s <weights.bin> \"token_ids\" [max_tokens]                  (single-shot)\n"
                 "  %s <weights.bin> --server                                    (stdin loop)\n"
                 "  %s <weights.bin> --server /tmp/qwen_ane.sock                 (socket server)\n"
-                "  %s <weights.bin> --http 8000 --model-dir ~/models/Qwen2.5   (HTTP API)\n",
-                argv[0], argv[0], argv[0], argv[0]);
+                "  %s <weights.bin> --http 8000 --model-dir ~/models/Qwen2.5   (HTTP API)\n"
+                "  %s --mlx --http 8080 [--mlx-model MODEL_ID]                 (MLX backend, ~503 t/s)\n",
+                argv[0], argv[0], argv[0], argv[0], argv[0]);
             return 1;
+        }
+
+        // Check for --mlx mode early (no weights file needed)
+        int mlx_mode = 0;
+        int mlx_port = 8080;
+        const char *mlx_model = NULL;
+        for (int i = 1; i < argc; i++) {
+            if (strcmp(argv[i], "--mlx") == 0) {
+                mlx_mode = 1;
+            } else if (strcmp(argv[i], "--mlx-model") == 0 && i + 1 < argc) {
+                mlx_model = argv[++i];
+            } else if (strcmp(argv[i], "--http") == 0 && i + 1 < argc) {
+                mlx_port = atoi(argv[++i]);
+            }
+        }
+        if (mlx_mode) {
+            return launch_mlx_server(mlx_port, mlx_model);
         }
 
         printf("=== Qwen2.5-0.5B ANE Inference ===\n\n");
