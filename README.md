@@ -295,6 +295,12 @@ No external dependencies. Uses only system frameworks + private ANE APIs resolve
 
 *Note: Above numbers are for single-layer training. Full 12-layer training runs at 62-72 ms/step.*
 
+## Community Benchmarks
+
+Community hardware benchmark submissions live in [`benchmarks/submissions/`](benchmarks/submissions/).
+
+- [Mac Studio (Apple M3 Ultra, 256 GB) — 2026-03-03](benchmarks/submissions/m3-ultra-mac-studio-2026-03-03/README.md)
+
 ## Disclaimer
 
 This project uses Apple's private, undocumented APIs (`_ANEClient`, `_ANECompiler`, `_ANEInMemoryModelDescriptor`). These APIs are not covered by any public stability guarantee and may change or break with any macOS update. This is independent research into Apple Neural Engine architecture, using APIs discovered through runtime introspection for research and educational purposes under fair use and interoperability provisions (see *Sega v. Accolade*, 1992; DMCA section 1201(f)). No Apple proprietary code or binaries are included in this repository. This project is not affiliated with or endorsed by Apple Inc. Use at your own risk.
