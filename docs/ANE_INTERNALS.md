@@ -8,11 +8,13 @@ A comprehensive guide to Apple's Neural Engine (ANE) based on reverse engineerin
 
 1. [How does the ANE work internally?](#1-how-does-the-ane-work-internally)
 2. [Can I program the ANE directly?](#2-can-i-program-the-ane-directly)
-3. [Is the ANE 16-bit?](#3-is-the-ane-16-bit)
-4. [ANE vs GPU vs CPU](#4-ane-vs-gpu-vs-cpu)
-5. [Reverse engineering the ANE](#5-reverse-engineering-the-ane)
-6. [How to verify ANE execution](#6-how-to-verify-ane-execution)
-7. [References and external resources](#7-references-and-external-resources)
+3. [What can be compiled and run on ANE?](#3-what-can-be-compiled-and-run-on-ane)
+4. [Security and safety mechanisms](#4-security-and-safety-mechanisms)
+5. [Is the ANE 16-bit?](#5-is-the-ane-16-bit)
+6. [ANE vs GPU vs CPU](#6-ane-vs-gpu-vs-cpu)
+7. [Reverse engineering the ANE](#7-reverse-engineering-the-ane)
+8. [How to verify ANE execution](#8-how-to-verify-ane-execution)
+9. [References and external resources](#9-references-and-external-resources)
 
 ---
 
@@ -196,7 +198,104 @@ The `--debug-mask` flag (set to max integer) generates intermediate files during
 
 ---
 
-## 3. Is the ANE 16-bit?
+## 3. What can be compiled and run on ANE?
+
+Any computation expressible as a static MIL (Model Intermediate Language) dataflow graph that the E5 compiler accepts. The ANE is a fixed-function accelerator, not a general-purpose processor -- it executes predefined operation graphs, not arbitrary code.
+
+### Verified Operations
+
+These operations have been compiled to custom MIL programs and executed on ANE hardware with output validated against CPU reference implementations (see `test_mil_custom.m`):
+
+| Category | Operations | Notes |
+|----------|-----------|-------|
+| Activations | `relu`, `gelu`, `softmax` | GELU supports EXACT, TANH_APPROXIMATION, SIGMOID_APPROXIMATION modes |
+| Normalization | `layer_norm` | Epsilon type must match gamma/beta dtype |
+| Attention | `scaled_dot_product_attention` | Fused Q@K^T/sqrt(d) + softmax + @V in a single op (iOS 18+) |
+| Linear algebra | `linear` (const weights), `matmul` (runtime tensors) | `linear` requires compile-time constant weights; `matmul` supports runtime inputs |
+| Type conversion | `cast` | fp32 <-> fp16. Required at ANE I/O boundaries |
+| Elementwise | `add`, `mul`, `real_div` | Broadcasting supported |
+| Shape | `reshape`, `transpose`, `concat`, `slice_by_index` | `concat` requires `interleave` param |
+| Composite | Full transformer block (LN + SDPA + Residual + FFN + GELU) | Compiles and runs as a single ANE program (~0.21ms) |
+
+### Available but Not Yet Tested
+
+These are valid MIL operations that the E5 compiler should accept:
+
+- `conv` -- convolutions (the upstream maderix/ANE repo uses these extensively for training)
+- `reduce_sum`, `reduce_mean`, `reduce_max` -- reductions
+- `gather`, `scatter` -- embedding lookups, KV cache writes
+- `rsqrt`, `sqrt`, `exp`, `log`, `tanh` -- unary math
+- `split`, `slice_by_size` -- tensor slicing
+- `batch_norm`, `instance_norm` -- normalization variants
+- Various pooling, padding, upsampling operations
+
+### What Cannot Run on ANE
+
+| Limitation | Detail |
+|-----------|--------|
+| No control flow | No loops, conditionals, or branching. MIL is a static dataflow graph. |
+| No dynamic shapes | All tensor dimensions must be known at compile time. |
+| No runtime weight updates | Weights are `const`, baked into the compiled binary. Changing weights requires recompilation (~10-50ms). |
+| No arbitrary memory access | No pointers or indexing beyond what `gather`/`scatter` provide. |
+| No custom ops | Only operations in Apple's MIL op set. No user-defined kernels at the hardware level. |
+| No FP32 compute | ANE computes in FP16 only. FP32 inputs are cast to FP16 internally. |
+
+### Implications for Training
+
+The ANE can execute the forward pass and the matrix math of backpropagation (`matmul` for dX and dW gradients). However, training is impractical because weights are read-only constants. After computing weight gradients on ANE, the optimizer step (W -= lr * dW) must run on CPU, and the MIL program must be recompiled with updated weights before the next forward pass. This recompilation costs ~10-50ms per step, dominating training time. See [ANE_CHAINING_RESEARCH.md, Section 9](ANE_CHAINING_RESEARCH.md#9-ane-training-feasibility-analysis) for detailed analysis.
+
+---
+
+## 4. Security and Safety Mechanisms
+
+The ANE has multiple layers of safety enforcement, but Apple's security model assumes access goes through CoreML. The private APIs we use bypass CoreML but still pass through the `aned` daemon and the E5 compiler.
+
+### Compile-Time Safety
+
+| Mechanism | What it does |
+|-----------|-------------|
+| MIL syntax validation | The E5 compiler rejects malformed MIL with `InvalidMILProgram` errors |
+| Type checking | Tensor dtypes, shapes, and parameter types must match exactly. Mismatches cause compile errors (e.g., `layer_norm` epsilon must match gamma/beta dtype; `concat` axis must be `int32` scalar, not tensor) |
+| Op validation | Unknown or unsupported operations are rejected |
+| I/O matching | MIL input/output names and shapes must match the `MLModelDescription` passed to `MLE5Engine` |
+
+### Runtime Safety
+
+| Mechanism | What it does |
+|-----------|-------------|
+| Shape enforcement | Input tensors must match declared shape exactly -- `MultiArray shape doesn't match ML Program's expected shape` error on mismatch |
+| Daemon mediation | ANE runs through the `aned` daemon (system service). User processes only get 3 IOKit interfaces: open, close, `programSendRequest` |
+| IOSurface isolation | I/O memory is managed by the kernel via IOSurface. Cannot read/write arbitrary memory through them |
+| SRAM limits | Programs exceeding the ANE SRAM budget (~24-32MB on M4 Max) are rejected or fall back to CPU/GPU |
+| Compile limit | ~119 compiled programs per process before the compiler leaks enough resources to fail (resource exhaustion, not a security boundary) |
+
+### Sandbox Interaction
+
+The E5 runtime needs write access to `~/Library/Caches/<binary_name>/` for its ANE specialization cache. macOS app sandbox can block this, causing compilation to fail with permission errors. When running outside a sandbox (e.g., command-line tools), this directory is created automatically.
+
+### What is NOT Protected
+
+| Gap | Detail |
+|-----|--------|
+| No access control | No authentication or entitlement check for using the private APIs. Any process can call `_ANEClient.sharedConnection` |
+| No rate limiting | Programs can be compiled in a loop until the ~119 limit exhausts resources |
+| No MIL signing | No code signing validation on MIL text -- any syntactically valid program that passes the compiler's type checks will execute |
+| No isolation between programs | Multiple programs from the same process share the ANE with no hardware-level isolation (the daemon schedules them) |
+
+### Practical Risk Assessment
+
+The ANE attack surface is limited because:
+
+1. **Fixed-function hardware**: The ANE executes predefined neural network operations, not arbitrary instructions. There is no instruction pointer, no stack, and no way to jump to arbitrary code.
+2. **Typed dataflow**: MIL programs operate on typed tensors with fixed shapes. There are no buffer overflows in the traditional sense -- the compiler enforces all dimensions at compile time.
+3. **Daemon intermediary**: All ANE access goes through `aned`, which validates requests before forwarding to the kernel driver. Direct IOKit access to the ANE is restricted to 3 interfaces.
+4. **No persistent state**: ANE programs don't persist across reboots. Compiled programs live in temp directories and caches that are cleaned by the OS.
+
+The main risk of the private APIs is **stability**: these APIs are undocumented and may change with any macOS update, potentially breaking programs that depend on them.
+
+---
+
+## 5. Is the ANE 16-bit?
 
 > hollance/neural-engine says: "It appears so."
 
@@ -220,7 +319,7 @@ Apple markets ANE TOPS using INT8, so the 38 TOPS figure for M4 is really ~19 TF
 
 ---
 
-## 4. ANE vs GPU vs CPU
+## 6. ANE vs GPU vs CPU
 
 Benchmarked on Qwen2.5-0.5B (dim=896, 24 layers, 494M params) on M4 Max:
 
@@ -258,7 +357,7 @@ Benchmarked on Qwen2.5-0.5B (dim=896, 24 layers, 494M params) on M4 Max:
 
 ---
 
-## 5. Reverse engineering the ANE
+## 7. Reverse engineering the ANE
 
 ### Prior Work
 
@@ -378,7 +477,7 @@ Our `_ANEInMemoryModel` path bypasses `.hwx` generation -- the model goes direct
 
 ---
 
-## 6. How to verify ANE execution
+## 8. How to verify ANE execution
 
 ### Power Monitoring
 
@@ -424,7 +523,7 @@ This can be applied when using the ANECompiler CLI tools from [ANETools](https:/
 
 ---
 
-## 7. References and External Resources
+## 9. References and External Resources
 
 ### Documentation and Research
 
