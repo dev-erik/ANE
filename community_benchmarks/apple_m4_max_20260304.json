@@ -1,0 +1,227 @@
+{
+  "schema_version": 1,
+  "username": "dev-erik",
+  "timestamp": "2026-03-04T21:34:51Z",
+  "system": {
+    "chip": "Apple M4 Max",
+    "machine": "Mac16,5",
+    "macos_version": "26.2",
+    "macos_build": "25C56",
+    "cpu_cores": 16,
+    "memory_gb": 128,
+    "neural_engine_cores": "unknown"
+  },
+  "benchmarks": {
+    "sram_probe": [
+      {
+        "channels": 256,
+        "weight_mb": 0.1,
+        "ms_per_eval": 0.125,
+        "tflops": 0.07,
+        "gflops_per_mb": 535.1
+      },
+      {
+        "channels": 512,
+        "weight_mb": 0.5,
+        "ms_per_eval": 0.123,
+        "tflops": 0.27,
+        "gflops_per_mb": 546.5
+      },
+      {
+        "channels": 1024,
+        "weight_mb": 2.0,
+        "ms_per_eval": 0.188,
+        "tflops": 0.71,
+        "gflops_per_mb": 356.3
+      },
+      {
+        "channels": 1536,
+        "weight_mb": 4.5,
+        "ms_per_eval": 0.157,
+        "tflops": 1.93,
+        "gflops_per_mb": 428.3
+      },
+      {
+        "channels": 2048,
+        "weight_mb": 8.0,
+        "ms_per_eval": 0.195,
+        "tflops": 2.75,
+        "gflops_per_mb": 343.3
+      },
+      {
+        "channels": 2560,
+        "weight_mb": 12.5,
+        "ms_per_eval": 0.27,
+        "tflops": 3.11,
+        "gflops_per_mb": 248.9
+      },
+      {
+        "channels": 3072,
+        "weight_mb": 18.0,
+        "ms_per_eval": 0.318,
+        "tflops": 3.8,
+        "gflops_per_mb": 211.1
+      },
+      {
+        "channels": 3584,
+        "weight_mb": 24.5,
+        "ms_per_eval": 0.369,
+        "tflops": 4.46,
+        "gflops_per_mb": 181.9
+      },
+      {
+        "channels": 4096,
+        "weight_mb": 32.0,
+        "ms_per_eval": 0.956,
+        "tflops": 2.25,
+        "gflops_per_mb": 70.2
+      },
+      {
+        "channels": 4608,
+        "weight_mb": 40.5,
+        "ms_per_eval": 0.525,
+        "tflops": 5.18,
+        "gflops_per_mb": 127.9
+      },
+      {
+        "channels": 5120,
+        "weight_mb": 50.0,
+        "ms_per_eval": 0.585,
+        "tflops": 5.74,
+        "gflops_per_mb": 114.8
+      },
+      {
+        "channels": 6144,
+        "weight_mb": 72.0,
+        "ms_per_eval": 0.767,
+        "tflops": 6.3,
+        "gflops_per_mb": 87.5
+      },
+      {
+        "channels": 8192,
+        "weight_mb": 128.0,
+        "ms_per_eval": 3.416,
+        "tflops": 1.26,
+        "gflops_per_mb": 9.8
+      }
+    ],
+    "inmem_peak": [
+      {
+        "depth": 32,
+        "channels": 512,
+        "spatial": 64,
+        "weight_mb": 16.0,
+        "gflops": 1.07,
+        "ms_per_eval": 0.17,
+        "tflops": 6.3
+      },
+      {
+        "depth": 48,
+        "channels": 512,
+        "spatial": 64,
+        "weight_mb": 24.0,
+        "gflops": 1.61,
+        "ms_per_eval": 0.211,
+        "tflops": 7.64
+      },
+      {
+        "depth": 64,
+        "channels": 512,
+        "spatial": 64,
+        "weight_mb": 32.0,
+        "gflops": 2.15,
+        "ms_per_eval": 0.254,
+        "tflops": 8.44
+      },
+      {
+        "depth": 96,
+        "channels": 512,
+        "spatial": 64,
+        "weight_mb": 48.0,
+        "gflops": 3.22,
+        "ms_per_eval": 0.324,
+        "tflops": 9.95
+      },
+      {
+        "depth": 128,
+        "channels": 512,
+        "spatial": 64,
+        "weight_mb": 64.0,
+        "gflops": 4.29,
+        "ms_per_eval": 0.371,
+        "tflops": 11.57
+      },
+      {
+        "depth": 64,
+        "channels": 256,
+        "spatial": 64,
+        "weight_mb": 8.0,
+        "gflops": 0.54,
+        "ms_per_eval": 0.125,
+        "tflops": 4.3
+      },
+      {
+        "depth": 128,
+        "channels": 256,
+        "spatial": 64,
+        "weight_mb": 16.0,
+        "gflops": 1.07,
+        "ms_per_eval": 0.165,
+        "tflops": 6.52
+      },
+      {
+        "depth": 256,
+        "channels": 256,
+        "spatial": 64,
+        "weight_mb": 32.0,
+        "gflops": 2.15,
+        "ms_per_eval": 0.252,
+        "tflops": 8.54
+      },
+      {
+        "depth": 64,
+        "channels": 384,
+        "spatial": 64,
+        "weight_mb": 18.0,
+        "gflops": 1.21,
+        "ms_per_eval": 0.173,
+        "tflops": 6.98
+      },
+      {
+        "depth": 128,
+        "channels": 384,
+        "spatial": 64,
+        "weight_mb": 36.0,
+        "gflops": 2.42,
+        "ms_per_eval": 0.269,
+        "tflops": 8.97
+      }
+    ],
+    "training_cpu_classifier": {
+      "ane_tflops": 1.3,
+      "ane_util_pct": 7.9,
+      "compile_pct": 82.0,
+      "train_pct": 14.9,
+      "ms_per_step": 74.7,
+      "ane_tflops_sustained": 1.25,
+      "total_tflops": 2.33
+    },
+    "training_ane_classifier": {
+      "compile_pct": 86.6,
+      "train_pct": 10.5,
+      "ms_per_step": 59.4,
+      "ane_tflops_sustained": 1.78,
+      "total_tflops": 2.93,
+      "ane_util_pct": 11.3
+    }
+  },
+  "summary": {
+    "peak_tflops": 11.57,
+    "sram_peak_efficiency_gflops_per_mb": 546.5,
+    "sram_spill_start_channels": 4096,
+    "training_ms_per_step_cpu": 74.7,
+    "training_ms_per_step_ane": 59.4,
+    "training_ane_tflops": 1.78,
+    "training_ane_util_pct": 11.3
+  }
+}
