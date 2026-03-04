@@ -32,6 +32,7 @@ static NSString *gen_classifier_fwd(void) {
 // bake embed^T as [1, DIM, VOCAB], matmul → [1, DIM, SEQ],
 // reshape back to [1, DIM, 1, SEQ].
 // ============================================================
+__attribute__((unused))
 static NSString *gen_classifier_bwd(void) {
     NSMutableString *m = [NSMutableString string];
     [m appendString:MIL_HDR];

@@ -729,8 +729,10 @@ int main(int argc, char *argv[]) {
             for(size_t i=0;i<(size_t)VOCAB*DIM;i++) gembed[i]*=gsc;
             adam_update(embed, gembed, &aembed, adam_t, lr, adam_b1, adam_b2, adam_eps);
 
-            printf("  [batch %d: compile=%.0fms train=%.1fms (%.1fms/step) compiles=%d]\n",
-                   steps_batch, cms, tms, tms/steps_batch, g_compile_count);
+            printf("  [batch %d: compile=%.0fms train=%.1fms (%.1fms/step) compiles=%d"
+                   " | ane=%.1f io=%.1f elem=%.1f rms=%.1f cblas=%.1f cls=%.1fms]\n",
+                   steps_batch, cms, tms, tms/steps_batch, g_compile_count,
+                   t_ane, t_io, t_elem, t_rms, t_cblas_wait, t_cls);
         }
 
         // Efficiency report

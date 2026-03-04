@@ -68,6 +68,7 @@ static void adam_update(float *w, const float *g, AdamState *s, int t, float lr,
 // Returns mean CE loss, writes dlogits = softmax(logits) - one_hot(targets)
 // Data is column-major [V, S], but we process per-column (stride=1 within col is v*S+t, stride between v's is S)
 // For vDSP: transpose to row-major scratch [S, V] to vectorize softmax per position
+__attribute__((unused))
 static float cross_entropy_loss(float *dlogits, const float *logits, const uint16_t *targets, int V, int S) {
     // Work in transposed layout [S, V] where each row is one position's logits (contiguous)
     float *buf = (float*)malloc(S * V * 4);
