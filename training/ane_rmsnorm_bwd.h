@@ -20,7 +20,7 @@
 static NSString *gen_rmsnorm_bwd(void) {
     float invd = 1.0f / (float)DIM;
     NSMutableString *m = [NSMutableString string];
-    [m appendString:MIL_HDR];
+    [m appendString:MIL_HDR_V2];
     
     // Input: concat of dy and x along channel dimension
     [m appendFormat:@"    func main<ios18>(tensor<fp16, [1, %d, 1, %d]> inp) {\n", 2*DIM, SEQ];

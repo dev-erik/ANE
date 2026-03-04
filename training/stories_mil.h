@@ -12,6 +12,17 @@
     "        tensor<int32, [2]> dl = const()[name=tensor<string, []>(\"dl\"), val=tensor<int32, [2]>([1,1])];\n" \
     "        tensor<int32, []> gr = const()[name=tensor<string, []>(\"gr\"), val=tensor<int32, []>(1)];\n"
 
+#define MIL_HDR_V2 \
+    @"program(1.3)\n[buildInfo = dict<string, string>({{\"coremlc-component-MIL\", \"3510.2.1\"}, " \
+    "{\"coremlc-version\", \"3505.4.1\"}, {\"coremltools-component-milinternal\", \"\"}, " \
+    "{\"coremltools-version\", \"9.0\"}})]\n{\n"
+#define CONV_CONST_V2 \
+    "        string pt = const()[name=string(\"pt\"), val=string(\"valid\")];\n" \
+    "        tensor<int32, [2]> st = const()[name=string(\"st\"), val=tensor<int32, [2]>([1,1])];\n" \
+    "        tensor<int32, [4]> pd = const()[name=string(\"pd\"), val=tensor<int32, [4]>([0,0,0,0])];\n" \
+    "        tensor<int32, [2]> dl = const()[name=string(\"dl\"), val=tensor<int32, [2]>([1,1])];\n" \
+    "        int32 gr = const()[name=string(\"gr\"), val=int32(1)];\n"
+
 // SDPA forward + taps: x_in → rmsnorm → QKV+SDPA+Wo → concat(o_out, Q, K, V, attn_out, xnorm)
 static NSString *gen_sdpa_fwd_taps(void) {
     float sc = 1.0f/sqrtf((float)HD);

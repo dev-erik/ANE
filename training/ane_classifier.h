@@ -14,9 +14,9 @@
 // ============================================================
 static NSString *gen_classifier_fwd(void) {
     NSMutableString *m = [NSMutableString string];
-    [m appendString:MIL_HDR];
+    [m appendString:MIL_HDR_V2];
     [m appendFormat:@"    func main<ios18>(tensor<fp16, [1, %d, 1, %d]> x) {\n", DIM, SEQ];
-    [m appendString:@CONV_CONST];
+    [m appendString:@CONV_CONST_V2];
     [m appendFormat:@"        tensor<fp16, [%d,%d,1,1]> We = const()[name=string(\"We\"), "
         "val=tensor<fp16, [%d,%d,1,1]>(BLOBFILE(path=string(\"@model_path/weights/embed.bin\"), offset=uint64(64)))];\n",
         VOCAB, DIM, VOCAB, DIM];
@@ -35,7 +35,7 @@ static NSString *gen_classifier_fwd(void) {
 __attribute__((unused))
 static NSString *gen_classifier_bwd(void) {
     NSMutableString *m = [NSMutableString string];
-    [m appendString:MIL_HDR];
+    [m appendString:MIL_HDR_V2];
     [m appendFormat:@"    func main<ios18>(tensor<fp16, [1, %d, 1, %d]> dl) {\n", VOCAB, SEQ];
     // Reshape dlogits from [1, VOCAB, 1, SEQ] to [1, VOCAB, SEQ]
     [m appendFormat:@"        tensor<int32, [3]> sh3 = const()[name=string(\"sh3\"), val=tensor<int32, [3]>([1,%d,%d])];\n", VOCAB, SEQ];
@@ -66,7 +66,7 @@ static NSString *gen_classifier_bwd(void) {
 // ============================================================
 static NSString *gen_softmax_vocab(void) {
     NSMutableString *m = [NSMutableString string];
-    [m appendString:MIL_HDR];
+    [m appendString:MIL_HDR_V2];
     [m appendFormat:@"    func main<ios18>(tensor<fp16, [1, %d, 1, %d]> x) {\n", VOCAB, SEQ];
     [m appendString:@"        int32 ax = const()[name=string(\"ax\"), val=int32(1)];\n"];
     [m appendFormat:@"        tensor<fp16, [1,%d,1,%d]> out = softmax(axis=ax,x=x)[name=string(\"sm\")];\n", VOCAB, SEQ];
@@ -83,7 +83,7 @@ static NSString *gen_softmax_vocab(void) {
 static NSString *gen_final_rmsnorm(void) {
     float invd = 1.0f/(float)DIM;
     NSMutableString *m = [NSMutableString string];
-    [m appendString:MIL_HDR];
+    [m appendString:MIL_HDR_V2];
     [m appendFormat:@"    func main<ios18>(tensor<fp16, [1, %d, 1, %d]> x) {\n", DIM, SEQ];
     [m appendFormat:@"        tensor<fp16, [1,%d,1,%d]> sq = mul(x=x,y=x)[name=string(\"sq\")];\n", DIM, SEQ];
     [m appendFormat:@"        tensor<int32, [1]> rax = const()[name=string(\"rax\"), val=tensor<int32, [1]>([1])];\n"];
