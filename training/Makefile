@@ -1,14 +1,16 @@
 CC = xcrun clang
+CC_C = xcrun clang
 
 ANE_COMPAT = -Wno-deprecated-declarations
 SEC_FLAGS = -fstack-protector-strong -Wformat-security
 
 CFLAGS = -O2 -Wall $(ANE_COMPAT) -fobjc-arc $(SEC_FLAGS)
+CFLAGS_C = -O2 -Wall -Wextra -Werror -std=c11
 CFLAGS_DEBUG = -O0 -g -Wall $(ANE_COMPAT) -fobjc-arc -fsanitize=address,undefined
 FRAMEWORKS = -framework Foundation -framework CoreML -framework IOSurface
 LDFLAGS = $(FRAMEWORKS) -ldl
 
-HEADERS_LARGE = stories_config.h stories_io.h stories_mil.h stories_cpu_ops.h
+HEADERS_LARGE = stories_config.h stories_io.h stories_mil.h stories_cpu_ops.h data_validation.h
 
 HEADERS_ANE = $(HEADERS_LARGE) ane_rmsnorm_bwd.h ane_classifier.h
 
@@ -52,7 +54,12 @@ test_ane_advanced: test_ane_advanced.m
 test_chaining: test_chaining.m
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
+test_data_validation: test_data_validation.c data_validation.h
+	$(CC_C) $(CFLAGS_C) -o $@ $<
+
 probes: $(PROBES)
+
+security-tests: test_data_validation
 
 data: tokenize
 	@bash download_data.sh
@@ -73,7 +80,6 @@ verify-flags:
 	@xcrun clang --version
 
 clean:
-	rm -f train train_large train_large_ane train_opt train_double_buffer $(PROBES) test_rmsnorm_bwd test_classifier
+	rm -f train train_large train_large_ane train_opt train_double_buffer $(PROBES) test_rmsnorm_bwd test_classifier test_data_validation test_chaining
 
-.PHONY: clean tokenize probes verify-flags data setup
-
+.PHONY: clean tokenize probes security-tests verify-flags data setup
