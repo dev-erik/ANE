@@ -87,11 +87,13 @@ Downloads pretokenized TinyStories (Llama 2 BPE, 32K vocab) from HuggingFace. Pr
 make train_large
 ./train_large stories110M.bin 256 100 1e-4
 ./train_large --model stories110M.bin --steps 100 --lr 1e-4
+./train_large --data ./tinystories_data00.bin --steps 100 --lr 1e-4
 
 # PR#19: ANE-offloaded classifier + softmax + rmsnorm_bwd
 make train_large_ane
 ./train_large_ane stories110M.bin 256 100 1e-4
 ./train_large_ane --no-ane-extras --steps 100    # disable ANE extras
+./train_large_ane --data ./tinystories_data00.bin --steps 100 --lr 1e-4
 
 # Dynamic pipeline (no recompilation)
 cd training_dynamic && make train
@@ -100,10 +102,11 @@ cd training_dynamic && make train
 ./train --steps 200 --lr 1e-4  # custom steps/lr
 ```
 
-**CLI flags (all pipelines):**
+**CLI flags (`train_large` / `train_large_ane`):**
 - `--steps N` (default 10000)
 - `--lr F` (default 3e-4)
 - `--model PATH` — pretrained weights file
+- `--data PATH` — tokenized TinyStories `.bin` file (default: `tinystories_data00.bin`)
 - `--ckpt PATH` — checkpoint file (preserved across exec() restarts)
 - `--resume` — resume from checkpoint
 - `--no-ane-extras` — (train_large_ane only) disable ANE classifier/softmax/rmsnorm_bwd

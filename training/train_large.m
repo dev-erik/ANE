@@ -6,24 +6,15 @@
 #include "stories_cpu_ops.h"
 
 #define CKPT_PATH_DEFAULT "ane_stories110M_ckpt.bin"
-#define MODEL_PATH_DEFAULT "../../assets/models/stories110M.bin"
-#define DATA_PATH "tinystories_data00.bin"
-
-static const char *get_path(const char *env_var, const char *default_val) {
-    const char *v = getenv(env_var);
-    return (v && v[0]) ? v : default_val;
-}
+#define MODEL_PATH_DEFAULT "stories110M.bin"
+#define DATA_PATH_DEFAULT "tinystories_data00.bin"
 
 // ===== Weight loading from llama2.c format =====
 static bool load_pretrained(LayerWeights *lw, float *rms_final, float *embed, const char *path) {
     FILE *f = fopen(path, "rb");
     if (!f) { printf("Cannot open %s\n", path); return false; }
     Llama2Config cfg;
-    // Validate config read — gatekeeper before any dimension-based logic (CRIT-03)
-    if (fread(&cfg, sizeof(cfg), 1, f) != 1) {
-        printf("  ERROR: Config read failed (truncated file?)\n");
-        fclose(f); return false;
-    }
+    fread(&cfg, sizeof(cfg), 1, f);
     printf("  Model config: dim=%d hidden=%d layers=%d heads=%d vocab=%d seq=%d\n",
            cfg.dim, cfg.hidden_dim, cfg.n_layers, cfg.n_heads, abs(cfg.vocab_size), cfg.seq_len);
     if (cfg.dim != DIM || cfg.hidden_dim != HIDDEN || cfg.n_layers != NLAYERS) {
@@ -121,7 +112,6 @@ static void save_checkpoint(const char *path, int step, int total_steps, float l
                             LayerWeights *lw, LayerAdam *la, float *rms_final, AdamState *arms_final,
                             float *embed, AdamState *aembed) {
     FILE *f = fopen(path, "wb");
-    if (!f) { fprintf(stderr, "save_checkpoint: cannot open %s\n", path); return; }  // CRIT-03
     CkptHdr h = {0};
     h.magic = 0x424C5A54; h.version = 2;
     h.step = step; h.total_steps = total_steps;
@@ -162,11 +152,7 @@ static bool load_checkpoint(const char *path, int *step, int *total_steps, float
     FILE *f = fopen(path, "rb");
     if (!f) return false;
     CkptHdr h;
-    // Validate header read before magic-byte check (CRIT-03)
-    if (fread(&h, sizeof(h), 1, f) != 1) {
-        fprintf(stderr, "load_checkpoint: header read failed\n");
-        fclose(f); return false;
-    }
+    fread(&h, sizeof(h), 1, f);
     if (h.magic != 0x424C5A54 || h.version != 2) { fclose(f); return false; }
     *step = h.step; *total_steps = h.total_steps; *lr = h.lr; *loss = h.loss;
     *cc = h.cum_compile; *ct = h.cum_train; *cw = h.cum_wall;
@@ -199,7 +185,6 @@ int main(int argc, char *argv[]) {
     @autoreleasepool {
         setbuf(stdout, NULL);
         ane_init();
-        init_accum_steps();
         mach_timebase_info(&g_tb);
 
         int total_steps = 10000;
@@ -207,9 +192,10 @@ int main(int argc, char *argv[]) {
         float adam_b1=0.9f, adam_b2=0.999f, adam_eps=1e-8f;
         int adam_t = 0, start_step = 0;
 
-        // Parse args (env vars set defaults, CLI flags override)
-        const char *ckpt_path = get_path("ANE_CKPT_PATH", CKPT_PATH_DEFAULT);
-        const char *model_path = get_path("ANE_MODEL_PATH", MODEL_PATH_DEFAULT);
+        // Parse args
+        const char *ckpt_path = CKPT_PATH_DEFAULT;
+        const char *model_path = MODEL_PATH_DEFAULT;
+        const char *data_path = DATA_PATH_DEFAULT;
         bool do_resume = false;
         int pos = 0;
         for (int i=1; i<argc; i++) {
@@ -218,6 +204,7 @@ int main(int argc, char *argv[]) {
             else if (strcmp(argv[i], "--lr") == 0 && i+1<argc) lr = atof(argv[++i]);
             else if (strcmp(argv[i], "--ckpt") == 0 && i+1<argc) ckpt_path = argv[++i];
             else if (strcmp(argv[i], "--model") == 0 && i+1<argc) model_path = argv[++i];
+            else if (strcmp(argv[i], "--data") == 0 && i+1<argc) data_path = argv[++i];
             else if (argv[i][0] != '-') {
                 if (pos == 0) model_path = argv[i];
                 else if (pos == 1) { /* seq - compile-time constant */ }
@@ -263,7 +250,6 @@ int main(int argc, char *argv[]) {
         if (!resuming) {
             printf("=== ANE Training: Stories110M (12 layers) ===\n");
             printf("dim=%d hidden=%d heads=%d seq=%d vocab=%d layers=%d\n", DIM, HIDDEN, HEADS, SEQ, VOCAB, NLAYERS);
-            printf("model=%s data=%s ckpt=%s\n", model_path, DATA_PATH, ckpt_path);
             if (!load_pretrained(lw, rms_final, embed, model_path)) {
                 printf("Pretrained load failed, using random init\n");
                 srand48(42);
@@ -299,8 +285,12 @@ int main(int argc, char *argv[]) {
         }
 
         // mmap token data
-        int data_fd = open(DATA_PATH, O_RDONLY);
-        if (data_fd < 0) { printf("Cannot open %s\n", DATA_PATH); return 1; }
+        int data_fd = open(data_path, O_RDONLY);
+        if (data_fd < 0) {
+            printf("Cannot open token data: %s\n", data_path);
+            printf("Hint: run `bash download_data.sh` in training/ or pass --data /path/to/tinystories_data00.bin\n");
+            return 1;
+        }
         struct stat st; fstat(data_fd, &st);
         size_t data_len = st.st_size;
         uint16_t *token_data = (uint16_t*)mmap(NULL, data_len, PROT_READ, MAP_PRIVATE, data_fd, 0);
@@ -362,7 +352,7 @@ int main(int argc, char *argv[]) {
                     lw, la, rms_final, &arms_final, embed, &aembed);
                 printf("[exec() restart step %d, %d compiles, loss=%.4f]\n", step, g_compile_count, last_loss);
                 fflush(stdout);
-                execl(argv[0], argv[0], "--resume", "--ckpt", ckpt_path, NULL);
+                execl(argv[0], argv[0], "--resume", "--ckpt", ckpt_path, "--data", data_path, NULL);
                 perror("execl"); return 1;
             }
 
