@@ -4,25 +4,21 @@
 #include "forward.h"
 #include <math.h>
 #include <string.h>
+#include <Accelerate/Accelerate.h>
 
-// dW += dy @ x^T — dy: [S, out_dim], x: [S, in_dim], dW: [out_dim, in_dim]
+// dW += dy^T @ x — dy: [S, out_dim], x: [S, in_dim], dW: [out_dim, in_dim]
 static void cpu_accum_dW(float *dW, const float *dy, const float *x, int S, int out_dim, int in_dim) {
-    for (int t = 0; t < S; t++)
-        for (int i = 0; i < out_dim; i++)
-            for (int j = 0; j < in_dim; j++)
-                dW[i*in_dim+j] += dy[t*out_dim+i] * x[t*in_dim+j];
+    cblas_sgemm(CblasRowMajor, CblasTrans, CblasNoTrans,
+                out_dim, in_dim, S, 1.0f,
+                dy, out_dim, x, in_dim, 1.0f, dW, in_dim);
 }
 
 // dx = W^T @ dy — W: [out_dim, in_dim], dy: [S, out_dim] → dx: [S, in_dim]
 static void cpu_matmul_backward_dx(const float *W, const float *dy, float *dx,
                                     int S, int out_dim, int in_dim) {
-    for (int t = 0; t < S; t++)
-        for (int j = 0; j < in_dim; j++) {
-            float sum = 0;
-            for (int i = 0; i < out_dim; i++)
-                sum += W[i*in_dim+j] * dy[t*out_dim+i];
-            dx[t*in_dim+j] = sum;
-        }
+    cblas_sgemm(CblasRowMajor, CblasNoTrans, CblasTrans,
+                S, in_dim, out_dim, 1.0f,
+                dy, out_dim, W, in_dim, 0.0f, dx, in_dim);
 }
 
 static void cpu_rmsnorm_backward(float *dx, const float *dy, const float *x, const float *w,
