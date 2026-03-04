@@ -116,35 +116,83 @@ HEADER
 echo "--- Running sram_probe ---"
 SRAM_JSON="[]"
 
+# Find a suitable Python (3.11-3.13; coremltools doesn't support 3.14+)
+find_python() {
+    # 1. Existing venv from a previous run
+    if [[ -x /tmp/ane_venv/bin/python3 ]]; then
+        echo "/tmp/ane_venv/bin/python3"; return
+    fi
+    # 2. Search Homebrew (ARM + Intel), pyenv, and system python
+    local SEARCH_PATHS=(
+        "/opt/homebrew/opt/python@{VER}/bin/python{VER}"
+        "/usr/local/opt/python@{VER}/bin/python{VER}"
+        "$HOME/.pyenv/versions/{VER}.*/bin/python3"
+    )
+    for pyver in 3.12 3.13 3.11; do
+        for tmpl in "${SEARCH_PATHS[@]}"; do
+            local pattern="${tmpl//\{VER\}/$pyver}"
+            for PY in $pattern; do
+                if [[ -x "$PY" ]]; then
+                    echo "  Found Python: $PY"
+                    "$PY" -m venv /tmp/ane_venv 2>&1 && \
+                        /tmp/ane_venv/bin/pip install -q coremltools numpy 2>&1
+                    if [[ $? -eq 0 ]]; then
+                        echo "/tmp/ane_venv/bin/python3"; return
+                    else
+                        echo "  WARNING: venv/pip setup failed for $PY" >&2
+                        rm -rf /tmp/ane_venv
+                    fi
+                fi
+            done
+        done
+    done
+    # 3. System python3 (check version is 3.11-3.13)
+    if command -v python3 &>/dev/null; then
+        local SYS_VER
+        SYS_VER=$(python3 -c "import sys; print(f'{sys.version_info.minor}')" 2>/dev/null)
+        if [[ "$SYS_VER" =~ ^(11|12|13)$ ]]; then
+            echo "  Found system Python 3.$SYS_VER"
+            python3 -m venv /tmp/ane_venv 2>&1 && \
+                /tmp/ane_venv/bin/pip install -q coremltools numpy 2>&1
+            if [[ $? -eq 0 ]]; then
+                echo "/tmp/ane_venv/bin/python3"; return
+            else
+                echo "  WARNING: venv/pip setup failed for system python3" >&2
+                rm -rf /tmp/ane_venv
+            fi
+        fi
+    fi
+    return 1
+}
+
 # Generate mlpackage models if needed
 if ! ls /tmp/ane_sram_*ch_*sp.mlpackage >/dev/null 2>&1; then
     echo "  Generating mlpackage models..."
     VENV_PYTHON=""
-    if [[ -x /tmp/ane_venv/bin/python3 ]]; then
-        VENV_PYTHON="/tmp/ane_venv/bin/python3"
-    else
-        for pyver in 3.12 3.13 3.11; do
-            PY="/opt/homebrew/opt/python@${pyver}/bin/python${pyver}"
-            if [[ -x "$PY" ]]; then
-                "$PY" -m venv /tmp/ane_venv && /tmp/ane_venv/bin/pip install -q coremltools numpy 2>/dev/null
-                VENV_PYTHON="/tmp/ane_venv/bin/python3"
-                break
-            fi
-        done
+    VENV_PYTHON=$(find_python 2>&1 | tee /dev/stderr | tail -1)
+    if [[ -z "$VENV_PYTHON" || ! -x "$VENV_PYTHON" ]]; then
+        echo "  WARNING: No compatible Python 3.11-3.13 found for coremltools."
+        echo "  SRAM probe will be skipped. Install Python 3.12 to enable it:"
+        echo "    brew install python@3.12"
+        VENV_PYTHON=""
     fi
     if [[ -n "$VENV_PYTHON" ]]; then
-        "$VENV_PYTHON" "$SCRIPT_DIR/gen_mlpackages.py" 2>/dev/null && echo "  mlpackage models generated" || echo "  WARNING: mlpackage generation failed"
+        "$VENV_PYTHON" "$SCRIPT_DIR/gen_mlpackages.py" 2>&1
+        if [[ $? -eq 0 ]]; then
+            echo "  mlpackage models generated"
+        else
+            echo "  WARNING: mlpackage generation failed. SRAM probe will be skipped."
+        fi
     fi
 fi
 
 if ls /tmp/ane_sram_*ch_*sp.mlpackage >/dev/null 2>&1; then
     cd "$ROOT_DIR"
-    $CC $CFLAGS -o sram_probe sram_probe.m 2>/dev/null
+    if $CC $CFLAGS -o sram_probe sram_probe.m 2>&1; then
+        SRAM_OUTPUT=$(./sram_probe 2>&1) || true
+        echo "  sram_probe complete"
 
-    SRAM_OUTPUT=$(./sram_probe 2>&1) || true
-    echo "  sram_probe complete"
-
-    SRAM_JSON=$(echo "$SRAM_OUTPUT" | python3 -c "
+        SRAM_JSON=$(echo "$SRAM_OUTPUT" | python3 -c "
 import sys, json, re
 results = []
 for line in sys.stdin:
@@ -160,8 +208,11 @@ for line in sys.stdin:
         })
 print(json.dumps(results))
 " 2>/dev/null || echo "[]")
+    else
+        echo "  WARNING: sram_probe compilation failed"
+    fi
 else
-    echo "  SKIPPED: no mlpackage models"
+    echo "  SKIPPED: no mlpackage models (need Python 3.11-3.13 + coremltools)"
 fi
 
 # ── 2. InMem Peak ──
