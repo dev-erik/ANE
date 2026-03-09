@@ -1,0 +1,96 @@
+{
+  "schema_version": 1,
+  "timestamp": "2026-03-09T19:36:04Z",
+  "system": {
+    "chip": "Apple M1",
+    "machine": "MacBookAir10,1",
+    "macos_version": "15.3.1",
+    "macos_build": "24D70",
+    "cpu_cores": 8,
+    "memory_gb": 8,
+    "neural_engine_cores": "16"
+  },
+  "benchmarks": {
+    "sram_probe": [
+      {
+        "channels": 512,
+        "weight_mb": 0.5,
+        "ms_per_eval": 0.244,
+        "tflops": 0.14,
+        "gflops_per_mb": 275.0
+      }
+    ],
+    "inmem_peak": [
+      {
+        "depth": 32,
+        "channels": 512,
+        "spatial": 64,
+        "weight_mb": 16.0,
+        "gflops": 1.07,
+        "ms_per_eval": 0.394,
+        "tflops": 2.73
+      },
+      {
+        "depth": 48,
+        "channels": 512,
+        "spatial": 64,
+        "weight_mb": 24.0,
+        "gflops": 1.61,
+        "ms_per_eval": 0.489,
+        "tflops": 3.3
+      },
+      {
+        "depth": 64,
+        "channels": 512,
+        "spatial": 64,
+        "weight_mb": 32.0,
+        "gflops": 2.15,
+        "ms_per_eval": 0.542,
+        "tflops": 3.96
+      },
+      {
+        "depth": 96,
+        "channels": 512,
+        "spatial": 64,
+        "weight_mb": 48.0,
+        "gflops": 3.22,
+        "ms_per_eval": 0.719,
+        "tflops": 4.48
+      },
+      {
+        "depth": 128,
+        "channels": 512,
+        "spatial": 64,
+        "weight_mb": 64.0,
+        "gflops": 4.29,
+        "ms_per_eval": 0.795,
+        "tflops": 5.4
+      }
+    ],
+    "training_cpu_classifier": {
+      "ms_per_step": 228.5,
+      "ane_tflops_sustained": 0.41,
+      "total_tflops": 0.76,
+      "ane_util_pct": 2.6,
+      "compile_pct": 80.4,
+      "train_pct": 14.5
+    },
+    "training_ane_classifier": {
+      "ms_per_step": 206.3,
+      "ane_tflops_sustained": 0.51,
+      "total_tflops": 0.84,
+      "ane_util_pct": 3.2,
+      "compile_pct": 83.1,
+      "train_pct": 11.7
+    }
+  },
+  "summary": {
+    "peak_tflops": 5.4,
+    "sram_peak_efficiency_gflops_per_mb": 275.0,
+    "sram_spill_start_channels": null,
+    "training_ms_per_step_cpu": 228.5,
+    "training_ms_per_step_ane": 206.3,
+    "training_ane_tflops": 0.51,
+    "training_ane_util_pct": 3.2
+  }
+}
